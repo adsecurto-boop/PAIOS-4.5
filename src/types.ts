@@ -270,3 +270,74 @@ export enum NavTab {
   JOURNAL = "JOURNAL",
   SETTINGS = "SETTINGS",
 }
+
+// --- MONEY MANAGER & BUDGET ANALYZER DATA MODELS ---
+export type BudgetCategory =
+  | 'Food'
+  | 'Travel'
+  | 'Health'
+  | 'Housing'
+  | 'LoanClearance'
+  | 'Learning'
+  | 'Investing'
+  | 'Savings'
+  | 'Entertainment'
+  | 'Other';
+
+export interface BudgetProfile {
+  id: string;
+  monthlySalary: number;
+  currency: string;
+  salaryCycleDay: number; // 1 to 31 (day of month salary arrives)
+  // Necessities & Fixed Obligations
+  foodMonthly: number;
+  travelMonthly: number;
+  healthMonthly: number;
+  housingMonthly: number;
+  loanClearanceMonthly: number;
+  // Growth & Planned Expenses
+  learningMonthly: number;
+  investingMonthly: number;
+  savingsMonthly: number;
+  discretionaryMonthly: number;
+  expectedAnnualReturnRate: number; // e.g. 10 (%) for compound projection
+  updatedAtMillis: number;
+}
+
+export interface ExpenseTransaction {
+  id: string;
+  title: string;
+  amount: number;
+  category: BudgetCategory | string;
+  dateString: string; // YYYY-MM-DD
+  timestampMillis: number;
+  isNecessity: boolean;
+  note?: string;
+}
+
+export interface DailySurplusRecord {
+  id: string;
+  dateString: string; // YYYY-MM-DD
+  dailySafeBudget: number;
+  actualSpend: number;
+  sweptAmount: number;
+  timestampMillis: number;
+}
+
+export interface BudgetAnalysisResult {
+  totalFixedObligations: number;
+  totalPlannedInvestments: number;
+  totalFreeMoney: number;
+  safeToSpendDaily: number;
+  safeToSpendWeekly: number;
+  idealDailySavings: number;
+  daysRemainingInCycle: number;
+  cycleStartDate: string;
+  cycleEndDate: string;
+  budgetHealthScore: number; // 0 to 100
+  needsRatio: number;
+  wantsRatio: number;
+  savingsRatio: number;
+  recommendations: string[];
+}
+

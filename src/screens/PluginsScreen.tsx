@@ -24,7 +24,11 @@ import {
   Heart,
   BookOpen,
   GitBranch,
-  Volume2
+  Volume2,
+  Wallet,
+  DollarSign,
+  PiggyBank,
+  TrendingUp,
 } from 'lucide-react';
 import { PreContextBroker, InboundPITRecord } from '../core/broker/PreContextBroker';
 import { PriorityRanking } from '../core/broker/PriorityRanking';
@@ -32,11 +36,12 @@ import { TimetablePlugin, TimetableProposal } from '../core/plugins/TimetablePlu
 import { PluginPortability } from '../core/plugins/PluginPortability';
 import { PAIOSStorage } from '../storage';
 import { AdaptiveTimetableResponse, AdaptiveTimetableBlock } from '../types';
+import { MoneyManagerScreen } from '../components/money/MoneyManagerScreen';
 
 export interface PluginMeta {
   id: string;
   name: string;
-  category: 'Productivity' | 'Health' | 'Learning' | 'System' | 'Developer';
+  category: 'Productivity' | 'Health' | 'Learning' | 'System' | 'Developer' | 'Finance';
   description: string;
   version: string;
   icon: string;
@@ -52,6 +57,26 @@ export interface PluginMeta {
 }
 
 const DEFAULT_PLUGINS: PluginMeta[] = [
+  {
+    id: 'money_budget_plugin',
+    name: 'Money Manager & Budget Analyzer',
+    category: 'Finance',
+    description: 'Calculates monthly obligations, daily safe-to-spend limits, leftover surplus sweeps, and 5-year compound growth projections.',
+    version: '4.5.1',
+    icon: 'wallet',
+    author: 'PAIOS Financial Labs',
+    installed: true,
+    enabled: true,
+    permissions: [
+      { name: 'Financial Read/Write', description: 'Manage monthly budget parameters, salary cycle, and daily expenses', level: 'full' },
+      { name: 'Pre-Context Staging', description: 'Broadcast daily safe-to-spend limits into Pre-Context PIT for AI agent', level: 'write' }
+    ],
+    config: {
+      defaultCurrency: '$',
+      autoSweepDailySurplus: true,
+      expectedReturnRate: 10
+    }
+  },
   {
     id: 'timetable_plugin',
     name: 'Adaptive Timetable Engine',
@@ -163,7 +188,7 @@ export const PluginsScreen: React.FC<PluginsScreenProps> = ({
   onTriggerAiTimetable,
   isAiScheduling = false
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'MARKETPLACE' | 'TIMETABLE' | 'PIT_LOGS'>('MARKETPLACE');
+  const [activeSubTab, setActiveSubTab] = useState<'MARKETPLACE' | 'TIMETABLE' | 'PIT_LOGS' | 'MONEY_MANAGER'>('MARKETPLACE');
   const [plugins, setPlugins] = useState<PluginMeta[]>(() => {
     const saved = PAIOSStorage.getItem<PluginMeta[]>('paios_plugins_manifest');
     return saved && saved.length > 0 ? saved : DEFAULT_PLUGINS;
@@ -379,6 +404,18 @@ export const PluginsScreen: React.FC<PluginsScreenProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveSubTab('MONEY_MANAGER')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              activeSubTab === 'MONEY_MANAGER'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Wallet className="w-3.5 h-3.5" />
+            <span>Money Manager</span>
+          </button>
+
+          <button
             onClick={() => setActiveSubTab('TIMETABLE')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
               activeSubTab === 'TIMETABLE'
@@ -585,6 +622,24 @@ export const PluginsScreen: React.FC<PluginsScreenProps> = ({
                 <span className="text-[10px] font-mono text-slate-500">Checksum Verified</span>
               </div>
               <div className="flex gap-2">
+                {selectedPlugin.id === 'money_budget_plugin' && (
+                  <button
+                    onClick={() => setActiveSubTab('MONEY_MANAGER')}
+                    className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/30 transition-all"
+                  >
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>Launch Money Manager</span>
+                  </button>
+                )}
+                {selectedPlugin.id === 'timetable_plugin' && (
+                  <button
+                    onClick={() => setActiveSubTab('TIMETABLE')}
+                    className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/30 transition-all"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Launch Timetable</span>
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     const manifestStr = PluginPortability.exportPluginData(selectedPlugin.id, selectedPlugin.config);
@@ -604,6 +659,11 @@ export const PluginsScreen: React.FC<PluginsScreenProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* SUB-VIEW: MONEY MANAGER & BUDGET ANALYZER */}
+      {activeSubTab === 'MONEY_MANAGER' && (
+        <MoneyManagerScreen />
       )}
 
       {/* SUB-VIEW 2: TIMETABLE PLUGIN & WEEKLY SCHEDULE */}

@@ -35,11 +35,11 @@ export interface DownloadProgress {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: '1.0.0',
-  buildNumber: '1',
+  version: '4.5.1',
+  buildNumber: '2',
   buildTimestamp: Date.now(),
-  gitCommit: '0a50906',
-  releaseNotes: 'PAIOS Baseline Desktop & Mobile Client Version',
+  gitCommit: 'db00164',
+  releaseNotes: 'PAIOS v4.5.1: Money Manager & Budget Analyzer Plugin and In-App Auto-Updater',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',

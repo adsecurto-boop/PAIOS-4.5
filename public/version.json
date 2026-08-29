@@ -1,23 +1,23 @@
 {
-  "version": "1.0.0",
-  "buildNumber": "1",
-  "buildTimestamp": 1787463500000,
-  "gitCommit": "0a50906",
-  "releaseNotes": "PAIOS Baseline Multi-Platform Build with In-App Updater for Windows & Android",
+  "version": "4.5.1",
+  "buildNumber": "2",
+  "buildTimestamp": 1787465000000,
+  "gitCommit": "db00164",
+  "releaseNotes": "PAIOS v4.5.1: Money Manager & Budget Analyzer Plugin and In-App Auto-Updater",
   "mandatory": false,
   "platforms": {
     "windows": {
       "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip",
       "filename": "PAIOS-Desktop-Windows-x64.zip",
-      "version": "1.0.0"
+      "version": "4.5.1"
     },
     "android": {
       "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk",
       "filename": "app-release.apk",
-      "version": "1.0.0"
+      "version": "4.5.1"
     },
     "web": {
-      "version": "1.0.0"
+      "version": "4.5.1"
     }
   }
 }

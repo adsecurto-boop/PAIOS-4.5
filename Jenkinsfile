@@ -71,7 +71,7 @@ pipeline {
                 powershell '''
                 $manifest = @"
 {
-  "version": "1.0.0",
+  "version": "4.5.1",
   "buildNumber": "$($env:BUILD_NUMBER)",
   "buildTimestamp": $([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()),
   "gitCommit": "$($env:GIT_COMMIT)",
@@ -82,12 +82,12 @@ pipeline {
     "windows": {
       "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip",
       "filename": "PAIOS-Desktop-Windows-x64.zip",
-      "version": "1.0.0"
+      "version": "4.5.1"
     },
     "android": {
       "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk",
       "filename": "app-release.apk",
-      "version": "1.0.0"
+      "version": "4.5.1"
     }
   }
 }

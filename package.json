@@ -1,7 +1,7 @@
 {
   "name": "paios-desktop",
   "private": true,
-  "version": "1.0.0",
+  "version": "4.5.1",
   "description": "PAIOS Desktop - Personal AI Operating System",
   "author": "PAIOS Team",
   "type": "module",

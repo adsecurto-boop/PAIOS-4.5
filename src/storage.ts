@@ -20,7 +20,11 @@ import {
   AdaptiveTimetableBlock,
   AdaptiveTimetableResponse,
   TimetableStatus,
+  BudgetProfile,
+  ExpenseTransaction,
+  DailySurplusRecord,
 } from './types';
+import { DEFAULT_BUDGET_PROFILE } from './core/plugins/MoneyManagerPlugin';
 import { ConflictResolver } from './core/sync/ConflictResolver';
 import { OfflineSyncManager } from './core/sync/OfflineSyncManager';
 
@@ -43,6 +47,9 @@ const STORAGE_KEYS = {
   VITALS: 'paios_vitals_v1',
   DOCTORS: 'paios_doctors_v1',
   APPOINTMENTS: 'paios_appointments_v1',
+  BUDGET_PROFILE: 'paios_budget_profile_v1',
+  EXPENSES: 'paios_expenses_v1',
+  DAILY_SURPLUS: 'paios_daily_surplus_v1',
 };
 
 export function getTodayDateString(): string {
@@ -1510,6 +1517,44 @@ ${captures.map((c) => `- [${formatTime(c.createdAtMillis)}] "${c.text}"`).join('
 RECENT JOURNAL ENTRIES:
 ${journal.map((j) => `- [${formatTime(j.createdAtMillis)}] "${j.title}" (Mood Score: ${j.moodScore || 5}/10) | Preview: "${j.content.slice(0, 80)}..."`).join('\n') || '- No journal entries.'}
     `.trim();
+  },
+
+  // --- MONEY MANAGER & BUDGET ANALYZER STORAGE ---
+  getBudgetProfile(): BudgetProfile {
+    return load<BudgetProfile>(STORAGE_KEYS.BUDGET_PROFILE, DEFAULT_BUDGET_PROFILE);
+  },
+  saveBudgetProfile(profile: BudgetProfile): void {
+    save(STORAGE_KEYS.BUDGET_PROFILE, profile);
+  },
+  getExpenseTransactions(): ExpenseTransaction[] {
+    return load<ExpenseTransaction[]>(STORAGE_KEYS.EXPENSES, []);
+  },
+  saveExpenseTransaction(tx: ExpenseTransaction): void {
+    const list = this.getExpenseTransactions();
+    const existingIndex = list.findIndex((e) => e.id === tx.id);
+    if (existingIndex >= 0) {
+      list[existingIndex] = tx;
+    } else {
+      list.unshift(tx);
+    }
+    save(STORAGE_KEYS.EXPENSES, list);
+  },
+  deleteExpenseTransaction(id: string): void {
+    const list = this.getExpenseTransactions().filter((e) => e.id !== id);
+    save(STORAGE_KEYS.EXPENSES, list);
+  },
+  getDailySurpluses(): DailySurplusRecord[] {
+    return load<DailySurplusRecord[]>(STORAGE_KEYS.DAILY_SURPLUS, []);
+  },
+  saveDailySurplus(surplus: DailySurplusRecord): void {
+    const list = this.getDailySurpluses();
+    const idx = list.findIndex((s) => s.dateString === surplus.dateString);
+    if (idx >= 0) {
+      list[idx] = surplus;
+    } else {
+      list.unshift(surplus);
+    }
+    save(STORAGE_KEYS.DAILY_SURPLUS, list);
   },
 
   // --- LOCAL-FIRST CACHE & OFFLINE ENGINE HELPERS ---
