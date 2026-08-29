@@ -23,6 +23,7 @@ import {
   Download,
   Power,
   Layers,
+  Sparkles,
 } from 'lucide-react';
 import { NavTab, ActivityLog } from '../types';
 
@@ -98,6 +99,7 @@ export const WindowsTaskBar: React.FC<WindowsTaskBarProps> = ({
   };
 
   const navItems = [
+    { tab: NavTab.AI, label: 'AI Home', icon: Sparkles, color: 'text-indigo-400' },
     { tab: NavTab.TODAY, label: 'Today', icon: Sun, color: 'text-amber-400' },
     { tab: NavTab.TIMELINE, label: 'Timeline', icon: History, color: 'text-emerald-400' },
     { tab: NavTab.TASKS, label: 'Tasks', icon: CheckCircle2, color: 'text-indigo-400' },
@@ -105,7 +107,6 @@ export const WindowsTaskBar: React.FC<WindowsTaskBarProps> = ({
     { tab: NavTab.HEALTH, label: 'Health', icon: Activity, color: 'text-rose-400' },
     { tab: NavTab.LEARN, label: 'Learn', icon: Brain, color: 'text-purple-400' },
     { tab: NavTab.INSIGHTS, label: 'Insights', icon: BarChart3, color: 'text-cyan-400' },
-    { tab: NavTab.AI, label: 'PAIOS AI', icon: Cpu, color: 'text-indigo-300' },
     { tab: NavTab.JOURNAL, label: 'Journal', icon: BookOpen, color: 'text-amber-300' },
     { tab: NavTab.SETTINGS, label: 'Settings', icon: Settings, color: 'text-slate-300' },
   ];

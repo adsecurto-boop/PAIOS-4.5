@@ -56,7 +56,7 @@ import { DesktopAppExportModal } from './components/DesktopAppExportModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<NavTab>(NavTab.TODAY);
+  const [activeTab, setActiveTab] = useState<NavTab>(NavTab.AI);
 
   // Auth & Session State
   const [currentUser, setCurrentUser] = useState<PaiosUser | null>(null);
@@ -1075,6 +1075,13 @@ export const App: React.FC = () => {
                   onSendMessage={handleSendAiMessage}
                   onExecuteAction={handleExecuteAiAction}
                   onClearHistory={handleClearAiChat}
+                  activeActivity={activeActivity}
+                  tasksCount={tasks.filter((t) => !t.completed).length}
+                  dueFlashcardsCount={studyCards.length}
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                  onOpenQuickCapture={() => setShowQuickCaptureModal(true)}
+                  onOpenStartActivity={() => setShowStartActivityModal(true)}
+                  onOpenAddTask={() => setShowTaskModal(true)}
                 />
               )}
 
