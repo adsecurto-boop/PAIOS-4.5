@@ -9,7 +9,7 @@ pipeline {
         JAVA_HOME    = "${env.JAVA_HOME ?: 'C:\\Program Files\\Java\\jdk-17'}"
         ANDROID_HOME = "${env.ANDROID_HOME ?: env.ANDROID_SDK_ROOT ?: 'C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk'}"
         
-        // Update PATH with Java and Android tool binaries
+        // Update PATH with Java and Android SDK tool binaries
         PATH         = "${env.JAVA_HOME}\\bin;${env.ANDROID_HOME}\\platform-tools;${env.ANDROID_HOME}\\tools\\bin;${env.PATH}"
     }
 
@@ -41,36 +41,36 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                echo "=== Installing Node Dependencies ==="
+                echo "=== Installing Dependencies ==="
                 bat 'IF EXIST package-lock.json ( npm ci || npm install ) ELSE ( npm install )'
             }
         }
 
-        stage('Validate & Test') {
+        stage('Lint & Unit Tests') {
             steps {
-                echo "=== Running TypeScript Check & Automated Test Suites ==="
+                echo "=== Running Linter & Unit Tests ==="
                 bat 'npm run lint'
                 bat 'npm run test'
             }
         }
 
-        stage('Build Core Web Distribution') {
+        stage('Compile Core Web Distribution') {
             steps {
                 echo "=== Compiling Production Web Assets ==="
                 bat 'npm run build'
             }
         }
 
-        stage('Build Target Platforms') {
+        stage('Parallel Platforms Build') {
             parallel {
-                stage('Build Android APK') {
+                stage('Android Build') {
                     steps {
-                        echo "=== Preparing & Compiling Android Release & Debug APKs ==="
+                        echo "=== Preparing & Compiling Android Release and Debug APKs ==="
                         
-                        // Sync Capacitor assets to android project
+                        // 1. Sync Capacitor web assets to Android project
                         bat 'npx cap sync android'
                         
-                        // Inject Firebase Configuration
+                        // 2. Generate Firebase Configuration (google-services.json)
                         powershell '''
                         $absolutePath = Join-Path $pwd "android/app/google-services.json"
                         $parentDir = Split-Path $absolutePath -Parent
@@ -124,7 +124,7 @@ pipeline {
                         Write-Output "[INFO] Synchronized $absolutePath with Firebase configuration."
                         '''
 
-                        // Ensure Android Launcher Icons & XML Resources
+                        // 3. Verify Launcher Icons & XML Resources
                         powershell '''
                         $resPath = Join-Path $pwd "android/app/src/main/res"
                         
@@ -204,14 +204,14 @@ pipeline {
                                 }
                             }
                         }
-                        Write-Output "[INFO] Android resources verified."
+                        Write-Output "[INFO] Android launcher icons and XML resources verified."
                         '''
 
-                        // Compile Android APK via Gradle
+                        // 4. Compile Android APKs via Gradle (assembleDebug & assembleRelease)
                         dir('android') {
                             bat '''
                             @echo off
-                            echo [STATUS] Compiling Android APKs...
+                            echo [STATUS] Compiling Android APKs (assembleDebug assembleRelease)...
                             if exist gradlew.bat (
                                 call gradlew.bat assembleDebug assembleRelease --no-daemon --stacktrace
                             ) else (
@@ -222,7 +222,7 @@ pipeline {
                     }
                 }
 
-                stage('Build Desktop App (.exe)') {
+                stage('Desktop Build') {
                     steps {
                         echo "=== Packaging PAIOS Desktop for Windows (x64) ==="
                         powershell '''
@@ -232,24 +232,31 @@ pipeline {
                         }
                         New-Item -ItemType Directory -Path "dist-electron" -Force | Out-Null
 
+                        # Execute Electron Packager build command
                         npm run build:exe
 
+                        # Locate packaged directory and compress into ZIP archive
                         $packDir = Get-ChildItem -Path "dist-electron" -Directory | Where-Object { $_.Name -like "*PAIOS Desktop*" } | Select-Object -First 1
                         if ($packDir) {
                             $zipPath = Join-Path $pwd "dist-electron/PAIOS-Desktop-Windows-x64.zip"
                             if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
                             Compress-Archive -Path "$($packDir.FullName)/*" -DestinationPath $zipPath -Force
                             Write-Output "[SUCCESS] Desktop archive generated at: $zipPath"
+                        } else {
+                            Write-Output "[WARN] Packaged folder not found in dist-electron."
                         }
 
+                        # Generate build info metadata
                         $buildInfo = @"
 PAIOS Unified Multi-Platform Build
 Commit: $($env:GIT_COMMIT)
 Branch: $($env:GIT_BRANCH)
 Build Number: $($env:BUILD_NUMBER)
 Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
+Platform: Windows x64 Desktop
 "@
                         Set-Content -Path "dist-electron/BUILD_INFO.txt" -Value $buildInfo
+                        Write-Output "[INFO] Generated dist-electron/BUILD_INFO.txt"
                         '''
                     }
                 }
@@ -258,7 +265,7 @@ Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
 
         stage('Archive Artifacts') {
             steps {
-                echo "=== Archiving Android & Desktop Build Output Artifacts ==="
+                echo "=== Archiving Android & Desktop Output Artifacts ==="
                 archiveArtifacts artifacts: 'android/app/build/outputs/apk/**/*.apk, dist-electron/**/*.exe, dist-electron/**/*.zip, dist-electron/BUILD_INFO.txt', allowEmptyArchive: true
             }
         }
@@ -320,13 +327,30 @@ void updateGitHubCommitStatus(String state, String description) {
         withCredentials([string(credentialsId: 'github-pat-token', variable: 'GITHUB_TOKEN')]) {
             if (env.GITHUB_TOKEN && commitSha) {
                 def targetUrl = "${env.BUILD_URL}console"
-                def payload = """{\\"state\\": \\"${state.toLowerCase()}\\", \\"target_url\\": \\"${targetUrl}\\", \\"description\\": \\"${description}\\", \\"context\\": \\"${context}\\"}"""
+                def payload = """{\"state\": \"${state.toLowerCase()}\", \"target_url\": \"${targetUrl}\", \"description\": \"${description}\", \"context\": \"${context}\"}"""
                 
                 try {
-                    bat "curl -f -X POST -H \"Authorization: token %GITHUB_TOKEN%\" -H \"Accept: application/vnd.github.v3+json\" -H \"Content-Type: application/json\" -d \"${payload}\" https://api.github.com/repos/${repoOwner}/${repoName}/statuses/${commitSha}"
+                    powershell """
+                    \$headers = @{
+                        "Authorization" = "token \$env:GITHUB_TOKEN"
+                        "Accept" = "application/vnd.github.v3+json"
+                        "Content-Type" = "application/json"
+                    }
+                    \$body = '${payload}'
+                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                    Invoke-RestMethod -Uri "https://api.github.com/repos/${repoOwner}/${repoName}/statuses/${commitSha}" -Method Post -Headers \$headers -Body \$body | Out-Null
+                    Write-Output "[INFO] Successfully updated GitHub commit status for ${commitSha} to ${state}"
+                    """
                 } catch (Exception e) {
-                    echo "Warning: GitHub commit status notification failed: ${e.message}"
+                    echo "Warning: GitHub commit status notification failed via PowerShell, attempting fallback: ${e.message}"
+                    try {
+                        bat "curl -f -X POST -H \"Authorization: token %GITHUB_TOKEN%\" -H \"Accept: application/vnd.github.v3+json\" -H \"Content-Type: application/json\" -d \"${payload.replace('"', '\\"')}\" https://api.github.com/repos/${repoOwner}/${repoName}/statuses/${commitSha}"
+                    } catch (Exception curlErr) {
+                        echo "Warning: GitHub commit status notification curl fallback failed: ${curlErr.message}"
+                    }
                 }
+            } else {
+                echo "Warning: GITHUB_TOKEN or commitSha not available. Skipping GitHub status notification."
             }
         }
     } catch (Exception e) {
