@@ -13,6 +13,8 @@ import {
   Zap,
   ArrowRight,
   Sliders,
+  ExternalLink,
+  Info,
 } from 'lucide-react';
 import {
   UpdateService,
@@ -21,7 +23,6 @@ import {
   CURRENT_CLIENT_VERSION,
   getRunningPlatform,
 } from '../services/UpdateService';
-import { PAIOSStorage } from '../storage';
 
 export const SoftwareUpdateCard: React.FC = () => {
   const [isChecking, setIsChecking] = useState(false);
@@ -44,7 +45,6 @@ export const SoftwareUpdateCard: React.FC = () => {
   const platform = getRunningPlatform();
 
   useEffect(() => {
-    // Initial check at card mount
     handleCheckForUpdates();
   }, []);
 
@@ -58,9 +58,11 @@ export const SoftwareUpdateCard: React.FC = () => {
       setLastCheckTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
 
       if (result.updateAvailable) {
-        setStatusMessage(`New version v${result.manifest.version} (${result.manifest.gitCommit}) is available!`);
+        setStatusMessage(
+          `New build v${result.manifest.version} (Commit ${result.manifest.gitCommit}) is available on main branch!`
+        );
       } else {
-        setStatusMessage('Your PAIOS application is fully up to date with the latest build.');
+        setStatusMessage(`Your PAIOS application is up to date on commit ${result.manifest.gitCommit}.`);
       }
     } catch (err: any) {
       setStatusMessage('Unable to reach update server. Please check your network connection.');
@@ -82,7 +84,7 @@ export const SoftwareUpdateCard: React.FC = () => {
         transferredBytes: 0,
         totalBytes: 0,
         status: 'error',
-        error: err?.message || 'Download failed',
+        error: err?.message || 'Download failed across candidate servers',
       });
     }
   };
@@ -138,7 +140,7 @@ export const SoftwareUpdateCard: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">
-              Automatically check, download, and apply latest Jenkins builds across Desktop and Mobile
+              Live GitHub repository & Jenkins CI/CD automatic build verification and direct package installer
             </p>
           </div>
         </div>
@@ -150,12 +152,12 @@ export const SoftwareUpdateCard: React.FC = () => {
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? 'animate-spin' : ''}`} />
-            <span>{isChecking ? 'Checking...' : 'Check for Updates'}</span>
+            <span>{isChecking ? 'Checking GitHub & Jenkins...' : 'Check for Updates'}</span>
           </button>
         </div>
       </div>
 
-      {/* Platform & Version Status Grid */}
+      {/* Platform & Version Comparison Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 relative z-10">
         {/* Platform Card */}
         <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800/80 flex items-center gap-3">
@@ -180,32 +182,55 @@ export const SoftwareUpdateCard: React.FC = () => {
           </div>
         </div>
 
-        {/* Current Build Commit */}
+        {/* Current Running Build Commit */}
         <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800/80 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-cyan-950 text-cyan-400 border border-cyan-800 shrink-0">
             <GitCommit className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono text-slate-400 block">Active Build Hash</span>
+            <span className="text-[10px] font-mono text-slate-400 block">Installed Build Commit</span>
             <strong className="text-xs font-mono text-cyan-300 font-bold">
               {CURRENT_CLIENT_VERSION.gitCommit}
             </strong>
           </div>
         </div>
 
-        {/* Last Checked Info */}
+        {/* Latest Available Remote Commit */}
         <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800/80 flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-slate-900 text-slate-400 border border-slate-800 shrink-0">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <div className="p-2 rounded-lg bg-emerald-950 text-emerald-400 border border-emerald-800 shrink-0">
+            <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] font-mono text-slate-400 block">Status Check</span>
-            <strong className="text-xs font-semibold text-slate-200">
-              {lastCheckTime}
+            <span className="text-[10px] font-mono text-slate-400 block">Latest Remote Commit</span>
+            <strong className="text-xs font-mono text-emerald-300 font-bold">
+              {serverManifest?.gitCommit || CURRENT_CLIENT_VERSION.gitCommit}
             </strong>
           </div>
         </div>
       </div>
+
+      {/* Latest Commit Message & Release Details Banner */}
+      {serverManifest && (
+        <div className="bg-slate-950/90 p-4 rounded-xl border border-slate-800 space-y-2 relative z-10 text-xs font-mono">
+          <div className="flex items-center justify-between text-slate-400 text-[11px] border-b border-slate-800/80 pb-1.5">
+            <span className="flex items-center gap-1.5 text-indigo-300 font-bold">
+              <GitCommit className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Latest GitHub Commit: {serverManifest.gitCommit}</span>
+            </span>
+            <span className="text-slate-500">
+              {serverManifest.commitDate ? new Date(serverManifest.commitDate).toLocaleDateString() : 'Latest'}
+            </span>
+          </div>
+          <p className="text-white font-semibold text-xs leading-relaxed">
+            "{serverManifest.commitTitle || serverManifest.releaseNotes}"
+          </p>
+          {serverManifest.commitAuthor && (
+            <div className="text-[10px] text-slate-400">
+              Author: <span className="text-slate-300">{serverManifest.commitAuthor}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Status Alert Banner */}
       {statusMessage && (
@@ -228,15 +253,15 @@ export const SoftwareUpdateCard: React.FC = () => {
           {updateAvailable && downloadProgress.status === 'idle' && (
             <button
               onClick={handleDownloadUpdate}
-              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg shadow-md transition-all shrink-0 flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-400 hover:from-amber-400 hover:to-orange-300 text-slate-950 font-bold text-xs rounded-lg shadow-md transition-all shrink-0 flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
               <span>
                 {platform === 'android'
                   ? 'Download APK'
                   : platform === 'electron'
-                  ? 'Download Update'
-                  : 'Download'}
+                  ? 'Download Windows Update'
+                  : 'Download Update'}
               </span>
             </button>
           )}
@@ -249,7 +274,7 @@ export const SoftwareUpdateCard: React.FC = () => {
           <div className="flex items-center justify-between text-xs text-slate-300">
             <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-              Downloading v{serverManifest?.version || 'Update'} ({downloadProgress.percent}%)
+              Downloading v{serverManifest?.version || '4.5.1'} ({downloadProgress.percent}%)
             </span>
             <span className="font-mono text-[11px] text-slate-400">
               {formatBytes(downloadProgress.transferredBytes)} / {formatBytes(downloadProgress.totalBytes)}
@@ -269,6 +294,22 @@ export const SoftwareUpdateCard: React.FC = () => {
               Cancel Download
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Download Error Details */}
+      {downloadProgress.status === 'error' && (
+        <div className="p-3.5 bg-rose-950/60 border border-rose-600/50 rounded-xl text-xs text-rose-200 flex items-center justify-between gap-3 relative z-10">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{downloadProgress.error || 'Download failed.'}</span>
+          </div>
+          <button
+            onClick={handleDownloadUpdate}
+            className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -320,11 +361,11 @@ export const SoftwareUpdateCard: React.FC = () => {
                 type="text"
                 value={customServerUrl}
                 onChange={(e) => setCustomServerUrl(e.target.value)}
-                placeholder="https://your-custom-paios-domain.com/api/version"
+                placeholder="https://raw.githubusercontent.com/adsecurto-boop/PAIOS-4.5/main/public/version.json"
                 className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
               />
               <span className="text-[10px] text-slate-500 mt-1 block">
-                Leave empty to automatically query the default Jenkins / GitHub / Local endpoint.
+                Leave empty to automatically query GitHub Raw, Atom Feeds, Jenkins, and Local backend.
               </span>
             </div>
 

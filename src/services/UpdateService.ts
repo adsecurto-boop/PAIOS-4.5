@@ -1,6 +1,10 @@
 // PAIOS Cross-Platform In-App Update Service
 // Supports Windows Desktop (Electron), Android (Capacitor APK installer), and Web (OTA/SW)
 
+declare const __APP_VERSION__: string | undefined;
+declare const __GIT_COMMIT__: string | undefined;
+declare const __BUILD_TIMESTAMP__: number | undefined;
+
 export interface PlatformAssetInfo {
   url: string;
   filename: string;
@@ -14,6 +18,9 @@ export interface VersionManifest {
   buildNumber?: string | number;
   buildTimestamp: number;
   gitCommit: string;
+  commitTitle?: string;
+  commitAuthor?: string;
+  commitDate?: string;
   releaseNotes?: string;
   mandatory?: boolean;
   publishedAt?: string;
@@ -35,10 +42,10 @@ export interface DownloadProgress {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: '4.5.1',
+  version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.1',
   buildNumber: '2',
-  buildTimestamp: Date.now(),
-  gitCommit: 'db00164',
+  buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
+  gitCommit: typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : '7909b37',
   releaseNotes: 'PAIOS v4.5.1: Money Manager & Budget Analyzer Plugin and In-App Auto-Updater',
   platforms: {
     windows: {
@@ -81,7 +88,49 @@ export class UpdateService {
   private static activeDownloadAbortController: AbortController | null = null;
 
   /**
-   * Check for updates across multiple sources (Local API, static manifest, GitHub Releases API)
+   * Helper: Parses GitHub Atom feed to get the absolute latest commit details
+   */
+  private static async fetchLatestGitHubCommit(): Promise<{
+    sha: string;
+    shortSha: string;
+    title: string;
+    author: string;
+    date: string;
+  } | null> {
+    try {
+      const res = await fetch('https://github.com/adsecurto-boop/PAIOS-4.5/commits/main.atom', {
+        headers: { Accept: 'application/atom+xml, text/xml, */*' },
+      });
+      if (!res.ok) return null;
+
+      const xmlText = await res.text();
+      // Match first entry in Atom feed
+      const entryMatch = xmlText.match(/<entry>([\s\S]*?)<\/entry>/);
+      if (!entryMatch) return null;
+
+      const entryXml = entryMatch[1];
+      const idMatch = entryXml.match(/<id>tag:github\.com,2008:Grit::Commit\/([a-f0-9]+)<\/id>/i);
+      const titleMatch = entryXml.match(/<title>\s*([\s\S]*?)\s*<\/title>/i);
+      const updatedMatch = entryXml.match(/<updated>\s*([\s\S]*?)\s*<\/updated>/i);
+      const authorMatch = entryXml.match(/<author>[\s\S]*?<name>\s*([\s\S]*?)\s*<\/name>/i);
+
+      const fullSha = idMatch ? idMatch[1] : '';
+      const shortSha = fullSha ? fullSha.substring(0, 7) : '';
+      const title = titleMatch ? titleMatch[1].trim() : 'Updated build on main branch';
+      const date = updatedMatch ? updatedMatch[1].trim() : new Date().toISOString();
+      const author = authorMatch ? authorMatch[1].trim() : 'adsecurto-boop';
+
+      if (fullSha) {
+        return { sha: fullSha, shortSha, title, author, date };
+      }
+    } catch (err) {
+      console.warn('[UpdateService] Atom feed query deferred:', err);
+    }
+    return null;
+  }
+
+  /**
+   * Check for updates across multiple sources (GitHub Raw, Atom Feed, Jenkins, Local API)
    */
   public static async checkForUpdates(customUrl?: string): Promise<{
     updateAvailable: boolean;
@@ -89,9 +138,16 @@ export class UpdateService {
     currentVersion: VersionManifest;
   }> {
     const current = CURRENT_CLIENT_VERSION;
-    let fetchedManifest: VersionManifest | null = null;
+    let fetchedManifest: Partial<VersionManifest> | null = null;
+    let latestCommitInfo: {
+      sha: string;
+      shortSha: string;
+      title: string;
+      author: string;
+      date: string;
+    } | null = null;
 
-    // 1. Try custom URL if provided
+    // 1. Try Custom URL if provided
     if (customUrl && customUrl.trim()) {
       try {
         const res = await fetch(customUrl.trim() + '?t=' + Date.now(), {
@@ -105,7 +161,38 @@ export class UpdateService {
       }
     }
 
-    // 2. Try local server endpoint /api/version
+    // 2. Fetch latest GitHub Raw Version Manifest
+    if (!fetchedManifest) {
+      try {
+        const res = await fetch(
+          'https://raw.githubusercontent.com/adsecurto-boop/PAIOS-4.5/main/public/version.json?t=' + Date.now(),
+          { headers: { 'Cache-Control': 'no-cache' } }
+        );
+        if (res.ok) {
+          fetchedManifest = await res.json();
+        }
+      } catch (err) {
+        console.warn('[UpdateService] GitHub Raw version.json check deferred:', err);
+      }
+    }
+
+    // 3. Fetch latest GitHub Commits Atom Feed for real-time commit metadata
+    latestCommitInfo = await this.fetchLatestGitHubCommit();
+
+    // 4. Try local Jenkins Server if available
+    if (!fetchedManifest) {
+      try {
+        const jenkinsRes = await fetch(
+          'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/version.json?t=' +
+            Date.now()
+        );
+        if (jenkinsRes.ok) {
+          fetchedManifest = await jenkinsRes.json();
+        }
+      } catch (err) {}
+    }
+
+    // 5. Try local Express API /api/version
     if (!fetchedManifest) {
       try {
         const res = await fetch('/api/version?t=' + Date.now(), {
@@ -114,85 +201,60 @@ export class UpdateService {
         if (res.ok) {
           fetchedManifest = await res.json();
         }
-      } catch (err) {
-        // Fallback to static manifest
-      }
+      } catch (err) {}
     }
 
-    // 3. Try static bundled manifest /version.json
-    if (!fetchedManifest) {
-      try {
-        const res = await fetch('/version.json?t=' + Date.now(), {
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        if (res.ok) {
-          fetchedManifest = await res.json();
-        }
-      } catch (err) {
-        // Fallback to GitHub Releases API
-      }
-    }
+    // Compose final remote manifest
+    const targetVersion = fetchedManifest?.version || current.version || '4.5.1';
+    const targetCommit =
+      latestCommitInfo?.shortSha ||
+      fetchedManifest?.gitCommit ||
+      current.gitCommit;
 
-    // 4. Try GitHub Releases API
-    if (!fetchedManifest) {
-      try {
-        const ghRes = await fetch('https://api.github.com/repos/adsecurto-boop/PAIOS-4.5/releases/latest', {
-          headers: { Accept: 'application/vnd.github.v3+json' },
-        });
-        if (ghRes.ok) {
-          const release = await ghRes.json();
-          const tag = (release.tag_name || 'v1.0.0').replace(/^v/, '');
-          
-          let winAsset: PlatformAssetInfo | undefined;
-          let androidAsset: PlatformAssetInfo | undefined;
+    const manifest: VersionManifest = {
+      version: targetVersion,
+      buildNumber: fetchedManifest?.buildNumber || 2,
+      buildTimestamp:
+        latestCommitInfo?.date
+          ? new Date(latestCommitInfo.date).getTime()
+          : fetchedManifest?.buildTimestamp || Date.now(),
+      gitCommit: targetCommit,
+      commitTitle: latestCommitInfo?.title || fetchedManifest?.releaseNotes || 'PAIOS Updates & Optimizations',
+      commitAuthor: latestCommitInfo?.author || 'PAIOS Team',
+      commitDate: latestCommitInfo?.date || new Date().toISOString(),
+      releaseNotes:
+        latestCommitInfo?.title ||
+        fetchedManifest?.releaseNotes ||
+        'PAIOS v4.5.1: Money Manager & Budget Analyzer Plugin and In-App Auto-Updater',
+      platforms: {
+        windows: {
+          url:
+            fetchedManifest?.platforms?.windows?.url ||
+            'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/PAIOS-Desktop-Windows-x64.zip',
+          filename: 'PAIOS-Desktop-Windows-x64.zip',
+          version: targetVersion,
+        },
+        android: {
+          url:
+            fetchedManifest?.platforms?.android?.url ||
+            'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk',
+          filename: 'app-release.apk',
+          version: targetVersion,
+        },
+      },
+    };
 
-          if (Array.isArray(release.assets)) {
-            const win = release.assets.find((a: any) => a.name.endsWith('.zip') || a.name.endsWith('.exe'));
-            if (win) {
-              winAsset = {
-                url: win.browser_download_url,
-                filename: win.name,
-                sizeBytes: win.size,
-                version: tag,
-              };
-            }
-            const apk = release.assets.find((a: any) => a.name.endsWith('.apk'));
-            if (apk) {
-              androidAsset = {
-                url: apk.browser_download_url,
-                filename: apk.name,
-                sizeBytes: apk.size,
-                version: tag,
-              };
-            }
-          }
-
-          fetchedManifest = {
-            version: tag,
-            buildTimestamp: new Date(release.published_at || release.created_at || Date.now()).getTime(),
-            gitCommit: release.target_commitish || release.node_id?.substring(0, 7) || 'release',
-            releaseNotes: release.body || release.name || 'Latest GitHub Release',
-            platforms: {
-              windows: winAsset,
-              android: androidAsset,
-            },
-          };
-        }
-      } catch (err) {
-        console.warn('[UpdateService] GitHub releases check fallback deferred:', err);
-      }
-    }
-
-    // If still no manifest, use current as fallback
-    const manifest = fetchedManifest || current;
     this.cachedManifest = manifest;
 
-    // Compare versions
-    const isNewerCommit = manifest.gitCommit && manifest.gitCommit !== current.gitCommit && manifest.gitCommit !== 'c9f81a2';
-    const isNewerTimestamp = (manifest.buildTimestamp || 0) > (current.buildTimestamp || 0);
-    const isNewerVersionStr = manifest.version !== current.version && manifest.version !== '1.0.0';
+    // Detect if update is available
+    const isNewerCommit =
+      targetCommit &&
+      targetCommit.toLowerCase().substring(0, 7) !== current.gitCommit.toLowerCase().substring(0, 7);
 
-    const updateAvailable = Boolean(fetchedManifest && (isNewerCommit || isNewerTimestamp || isNewerVersionStr));
+    const isNewerVersionStr = targetVersion !== current.version;
+    const isNewerTimestamp = (manifest.buildTimestamp || 0) > (current.buildTimestamp || 0);
+
+    const updateAvailable = Boolean(isNewerCommit || isNewerVersionStr || (latestCommitInfo && isNewerTimestamp));
 
     return {
       updateAvailable,
@@ -202,7 +264,7 @@ export class UpdateService {
   }
 
   /**
-   * Download the update asset for the current platform with live progress callbacks
+   * Download the update asset for the current platform with multi-tier fallback & progress callbacks
    */
   public static async downloadUpdate(
     manifest: VersionManifest,
@@ -228,12 +290,20 @@ export class UpdateService {
               onProgress(progress);
             });
 
-            const downloadUrl =
-              manifest.platforms?.windows?.url ||
-              '/api/version/download/windows';
+            // Candidate URLs for Electron download
+            const candidateUrls = [
+              manifest.platforms?.windows?.url,
+              'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/PAIOS-Desktop-Windows-x64.zip',
+              '/api/version/download/windows',
+              'https://github.com/adsecurto-boop/PAIOS-4.5/archive/refs/heads/main.zip',
+            ].filter(Boolean);
 
             electron.ipcRenderer
-              .invoke('paios:download-update', { url: downloadUrl, version: manifest.version })
+              .invoke('paios:download-update', {
+                url: candidateUrls[0],
+                fallbackUrls: candidateUrls.slice(1),
+                version: manifest.version,
+              })
               .then((resultPath: string) => {
                 onProgress({
                   percent: 100,
@@ -260,96 +330,110 @@ export class UpdateService {
       }
     }
 
-    // 2. Android & Web Platform Streaming Download Flow
-    const downloadUrl =
+    // 2. Android & Web Candidate URLs
+    const candidateUrls =
       platform === 'android'
-        ? manifest.platforms?.android?.url || '/api/version/download/android'
-        : manifest.platforms?.windows?.url || '/api/version/download/windows';
+        ? [
+            manifest.platforms?.android?.url,
+            'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk',
+            'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk',
+            '/api/version/download/android',
+          ].filter(Boolean)
+        : [
+            manifest.platforms?.windows?.url,
+            'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/PAIOS-Desktop-Windows-x64.zip',
+            '/api/version/download/windows',
+            'https://github.com/adsecurto-boop/PAIOS-4.5/archive/refs/heads/main.zip',
+          ].filter(Boolean);
 
-    const filename =
-      platform === 'android'
-        ? manifest.platforms?.android?.filename || `PAIOS-v${manifest.version}.apk`
-        : manifest.platforms?.windows?.filename || `PAIOS-v${manifest.version}.zip`;
+    let lastError: any = null;
 
-    try {
-      const response = await fetch(downloadUrl, {
-        signal: this.activeDownloadAbortController.signal,
-      });
+    for (const url of candidateUrls) {
+      if (!url) continue;
+      try {
+        const response = await fetch(url, {
+          signal: this.activeDownloadAbortController.signal,
+        });
 
-      if (!response.ok) {
-        throw new Error(`Server returned HTTP ${response.status} for update download.`);
-      }
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} from ${url}`);
+        }
 
-      const contentLength = response.headers.get('content-length');
-      const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-      let transferredBytes = 0;
-      let startTime = Date.now();
+        const contentLength = response.headers.get('content-length');
+        const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+        let transferredBytes = 0;
+        const startTime = Date.now();
 
-      if (!response.body) {
-        const blob = await response.blob();
+        if (!response.body) {
+          const blob = await response.blob();
+          onProgress({
+            percent: 100,
+            transferredBytes: blob.size,
+            totalBytes: blob.size,
+            status: 'ready',
+          });
+          return blob;
+        }
+
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          if (value) {
+            chunks.push(value);
+            transferredBytes += value.length;
+
+            const elapsedSec = (Date.now() - startTime) / 1000;
+            const speed = elapsedSec > 0 ? Math.round(transferredBytes / elapsedSec) : 0;
+            const percent = totalBytes > 0 ? Math.min(100, Math.round((transferredBytes / totalBytes) * 100)) : 50;
+
+            onProgress({
+              percent,
+              transferredBytes,
+              totalBytes: totalBytes || transferredBytes,
+              speedBytesPerSec: speed,
+              status: 'downloading',
+            });
+          }
+        }
+
+        const mimeType = platform === 'android' ? 'application/vnd.android.package-archive' : 'application/zip';
+        const downloadedBlob = new Blob(chunks as any, { type: mimeType });
+
         onProgress({
           percent: 100,
-          transferredBytes: blob.size,
-          totalBytes: blob.size,
+          transferredBytes,
+          totalBytes: transferredBytes,
           status: 'ready',
         });
-        return blob;
-      }
 
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        if (value) {
-          chunks.push(value);
-          transferredBytes += value.length;
-          const elapsedSec = (Date.now() - startTime) / 1000;
-          const speed = elapsedSec > 0 ? Math.round(transferredBytes / elapsedSec) : 0;
-          const percent = totalBytes > 0 ? Math.min(100, Math.round((transferredBytes / totalBytes) * 100)) : 50;
-
+        return downloadedBlob;
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
           onProgress({
-            percent,
-            transferredBytes,
-            totalBytes: totalBytes || transferredBytes,
-            speedBytesPerSec: speed,
-            status: 'downloading',
+            percent: 0,
+            transferredBytes: 0,
+            totalBytes: 0,
+            status: 'idle',
           });
+          return null;
         }
+        lastError = err;
+        console.warn(`[UpdateService] Download failed from ${url}, trying next fallback...`, err);
       }
-
-      const mimeType = platform === 'android' ? 'application/vnd.android.package-archive' : 'application/zip';
-      const downloadedBlob = new Blob(chunks as any, { type: mimeType });
-
-      onProgress({
-        percent: 100,
-        transferredBytes,
-        totalBytes: transferredBytes,
-        status: 'ready',
-      });
-
-      return downloadedBlob;
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        onProgress({
-          percent: 0,
-          transferredBytes: 0,
-          totalBytes: 0,
-          status: 'idle',
-        });
-        return null;
-      }
-      onProgress({
-        percent: 0,
-        transferredBytes: 0,
-        totalBytes: 0,
-        status: 'error',
-        error: err.message || 'Download failed',
-      });
-      throw err;
     }
+
+    onProgress({
+      percent: 0,
+      transferredBytes: 0,
+      totalBytes: 0,
+      status: 'error',
+      error: lastError?.message || 'Download failed across all candidate endpoints',
+    });
+    throw lastError || new Error('Download failed');
   }
 
   /**
@@ -371,7 +455,7 @@ export class UpdateService {
   ): Promise<void> {
     const platform = getRunningPlatform();
 
-    // 1. Electron Platform Install / Reload
+    // 1. Electron Platform Install / Reveal
     if (platform === 'electron') {
       try {
         const electron = (window as any).require ? (window as any).require('electron') : null;
@@ -387,10 +471,13 @@ export class UpdateService {
       }
     }
 
-    // 2. Android APK Package Installer Trigger
+    // 2. Android APK Installation Trigger
     if (platform === 'android') {
       const filename = manifest.platforms?.android?.filename || `PAIOS-v${manifest.version}.apk`;
-      
+      const apkDownloadUrl =
+        manifest.platforms?.android?.url ||
+        'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk';
+
       if (downloadedData instanceof Blob) {
         const blobUrl = URL.createObjectURL(downloadedData);
         const a = document.createElement('a');
@@ -400,10 +487,10 @@ export class UpdateService {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
       } else {
-        const apkUrl = manifest.platforms?.android?.url || '/api/version/download/android';
-        window.open(apkUrl, '_system');
+        // Direct browser link to download APK
+        window.open(apkDownloadUrl, '_system');
       }
       return;
     }

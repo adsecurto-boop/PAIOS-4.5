@@ -184,7 +184,7 @@ ipcMain.handle('paios:reload', () => {
 });
 
 // IPC Handler: Download Windows Desktop Update Package
-ipcMain.handle('paios:download-update', async (event, { url, version }) => {
+ipcMain.handle('paios:download-update', async (event, { url, fallbackUrls = [], version }) => {
   const updatesDir = path.join(app.getPath('userData'), 'updates');
   if (!fs.existsSync(updatesDir)) {
     fs.mkdirSync(updatesDir, { recursive: true });
@@ -192,67 +192,87 @@ ipcMain.handle('paios:download-update', async (event, { url, version }) => {
 
   const filename = `PAIOS-Desktop-Windows-v${version || 'latest'}.zip`;
   const destPath = path.join(updatesDir, filename);
+  const candidateUrls = [url, ...fallbackUrls].filter(Boolean);
 
   return new Promise((resolve, reject) => {
-    function fetchWithRedirects(targetUrl) {
-      const client = targetUrl.startsWith('https') ? require('https') : require('http');
-      client.get(targetUrl, { headers: { 'User-Agent': 'PAIOS-Desktop-Updater' } }, (res) => {
-        // Follow HTTP redirects
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          return fetchWithRedirects(res.headers.location);
-        }
+    let urlIndex = 0;
 
-        if (res.statusCode !== 200) {
-          return reject(new Error(`Download failed with HTTP status ${res.statusCode}`));
-        }
+    function tryDownloadNext() {
+      if (urlIndex >= candidateUrls.length) {
+        return reject(new Error('All download endpoints failed'));
+      }
 
-        const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
-        let transferredBytes = 0;
-        const startTime = Date.now();
+      const currentUrl = candidateUrls[urlIndex];
+      urlIndex++;
 
-        const fileStream = fs.createWriteStream(destPath);
-        res.pipe(fileStream);
+      function fetchWithRedirects(targetUrl) {
+        try {
+          const client = targetUrl.startsWith('https') ? require('https') : require('http');
+          client.get(targetUrl, { headers: { 'User-Agent': 'PAIOS-Desktop-Updater' } }, (res) => {
+            // Follow HTTP redirects
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              return fetchWithRedirects(res.headers.location);
+            }
 
-        res.on('data', (chunk) => {
-          transferredBytes += chunk.length;
-          const elapsedSec = (Date.now() - startTime) / 1000;
-          const speed = elapsedSec > 0 ? Math.round(transferredBytes / elapsedSec) : 0;
-          const percent = totalBytes > 0 ? Math.min(100, Math.round((transferredBytes / totalBytes) * 100)) : 50;
+            if (res.statusCode !== 200) {
+              console.warn(`[Updater] ${targetUrl} returned status ${res.statusCode}, trying fallback...`);
+              return tryDownloadNext();
+            }
 
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('paios:update-download-progress', {
-              percent,
-              transferredBytes,
-              totalBytes: totalBytes || transferredBytes,
-              speedBytesPerSec: speed,
-              status: 'downloading',
+            const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+            let transferredBytes = 0;
+            const startTime = Date.now();
+
+            const fileStream = fs.createWriteStream(destPath);
+            res.pipe(fileStream);
+
+            res.on('data', (chunk) => {
+              transferredBytes += chunk.length;
+              const elapsedSec = (Date.now() - startTime) / 1000;
+              const speed = elapsedSec > 0 ? Math.round(transferredBytes / elapsedSec) : 0;
+              const percent = totalBytes > 0 ? Math.min(100, Math.round((transferredBytes / totalBytes) * 100)) : 50;
+
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('paios:update-download-progress', {
+                  percent,
+                  transferredBytes,
+                  totalBytes: totalBytes || transferredBytes,
+                  speedBytesPerSec: speed,
+                  status: 'downloading',
+                });
+              }
             });
-          }
-        });
 
-        fileStream.on('finish', () => {
-          fileStream.close();
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('paios:update-download-progress', {
-              percent: 100,
-              transferredBytes,
-              totalBytes: transferredBytes,
-              status: 'ready',
+            fileStream.on('finish', () => {
+              fileStream.close();
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('paios:update-download-progress', {
+                  percent: 100,
+                  transferredBytes,
+                  totalBytes: transferredBytes,
+                  status: 'ready',
+                });
+              }
+              resolve(destPath);
             });
-          }
-          resolve(destPath);
-        });
 
-        fileStream.on('error', (err) => {
-          fs.unlink(destPath, () => {});
-          reject(err);
-        });
-      }).on('error', (err) => {
-        reject(err);
-      });
+            fileStream.on('error', (err) => {
+              fs.unlink(destPath, () => {});
+              tryDownloadNext();
+            });
+          }).on('error', (err) => {
+            console.warn(`[Updater] Network error on ${targetUrl}, trying fallback...`, err.message);
+            tryDownloadNext();
+          });
+        } catch (err) {
+          tryDownloadNext();
+        }
+      }
+
+      fetchWithRedirects(currentUrl);
     }
 
-    fetchWithRedirects(url);
+    tryDownloadNext();
   });
 });
 
@@ -263,9 +283,14 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath }) => {
 
   if (fs.existsSync(targetFile)) {
     require('electron').shell.showItemInFolder(targetFile);
+  } else if (fs.existsSync(updatesDir)) {
+    require('electron').shell.openPath(updatesDir);
   }
 
   if (mainWindow) {
+    if (mainWindow.webContents?.session) {
+      await mainWindow.webContents.session.clearCache();
+    }
     mainWindow.reload();
   }
   return true;

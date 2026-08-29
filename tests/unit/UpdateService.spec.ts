@@ -115,7 +115,7 @@ describe('UpdateService Unit Tests', () => {
   });
 
   it('handles and reports download network errors gracefully', async () => {
-    global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network Connection Refused'));
+    global.fetch = vi.fn().mockRejectedValue(new Error('Network Connection Refused'));
 
     const progressEvents: DownloadProgress[] = [];
     await expect(
