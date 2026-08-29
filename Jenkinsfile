@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         REPO_OWNER   = 'adsecurto-boop'
-        REPO_NAME    = 'PAIOS-4.3'
+        REPO_NAME    = 'PAIOS-4.5'
         
         // Java & Android SDK paths for Windows Jenkins Agents
         JAVA_HOME    = "${env.JAVA_HOME ?: 'C:\\Program Files\\Java\\jdk-17'}"
@@ -293,7 +293,7 @@ Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
 void updateGitHubCommitStatus(String state, String description) {
     def context = 'Jenkins/PAIOS-MultiPlatform'
     def repoOwner = env.REPO_OWNER ?: 'adsecurto-boop'
-    def repoName = env.REPO_NAME ?: 'PAIOS-4.3'
+    def repoName = env.REPO_NAME ?: 'PAIOS-4.5'
     
     try {
         def remoteUrl = bat(script: 'git config --get remote.origin.url', returnStdout: true).trim()

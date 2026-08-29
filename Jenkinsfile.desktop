@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         REPO_OWNER   = 'adsecurto-boop'
-        REPO_NAME    = 'PAIOS-4.3'
+        REPO_NAME    = 'PAIOS-4.5'
         
         // Ensure standard Node and build tool paths are prioritized
         PATH         = "${env.PATH}"
@@ -126,7 +126,7 @@ void updateGitHubCommitStatus(String state, String description) {
     
     // Resolve dynamic Repo Owner and Repo Name if not already overridden
     def repoOwner = env.REPO_OWNER ?: 'adsecurto-boop'
-    def repoName = env.REPO_NAME ?: 'PAIOS-4.3'
+    def repoName = env.REPO_NAME ?: 'PAIOS-4.5'
     
     try {
         def remoteUrl = bat(script: 'git config --get remote.origin.url', returnStdout: true).trim()
