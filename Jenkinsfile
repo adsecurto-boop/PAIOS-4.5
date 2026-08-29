@@ -42,7 +42,15 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 echo "=== Installing Dependencies ==="
-                bat 'IF EXIST package-lock.json ( npm ci || npm install ) ELSE ( npm install )'
+                bat '''
+                @echo off
+                echo [INFO] Installing dependencies with --ignore-scripts...
+                if exist package-lock.json (
+                    call npm ci --ignore-scripts || call npm install --ignore-scripts --no-audit --no-fund
+                ) else (
+                    call npm install --ignore-scripts --no-audit --no-fund
+                )
+                '''
             }
         }
 
