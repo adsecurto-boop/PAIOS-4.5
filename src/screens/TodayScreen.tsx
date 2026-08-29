@@ -18,9 +18,16 @@ import {
   ArrowRight,
   X,
   Check,
+  Activity,
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  Terminal
 } from 'lucide-react';
 import { ActivityLog, Task, TimelineEntry, UserSettings } from '../types';
 import { TimetablePlugin, TimetableProposal } from '../core/plugins/TimetablePlugin';
+import { PreContextBroker, InboundPITRecord } from '../core/broker/PreContextBroker';
+import { PAIOSStorage } from '../storage';
 
 interface TodayScreenProps {
   activeActivity: ActivityLog | null;
@@ -66,6 +73,34 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     TimetablePlugin.getActiveProposal()
   );
   const [proposalSecondsLeft, setProposalSecondsLeft] = useState(0);
+
+  // Live Pit Stream Ticker State
+  const [pitRecords, setPitRecords] = useState<InboundPITRecord[]>(() => {
+    return PAIOSStorage.getItem<InboundPITRecord[]>('paios_precontext_pit', []) || [];
+  });
+  const [isPitCollapsed, setIsPitCollapsed] = useState(false);
+  const [isForceSyncing, setIsForceSyncing] = useState(false);
+
+  const refreshPit = () => {
+    const records = PAIOSStorage.getItem<InboundPITRecord[]>('paios_precontext_pit', []) || [];
+    setPitRecords(records);
+  };
+
+  const handleForceSync = async () => {
+    setIsForceSyncing(true);
+    try {
+      PreContextBroker.enqueuePIT({
+        source_plugin_id: 'user_action_header',
+        priority: 'high',
+        severity: 'info',
+        payload: { action: 'FORCE_SYNC_CLICK' },
+      });
+      await PreContextBroker.triggerForceSync();
+      refreshPit();
+    } finally {
+      setIsForceSyncing(false);
+    }
+  };
 
   // Live timer ticker update
   useEffect(() => {
@@ -323,7 +358,84 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         )}
       </section>
 
-      {/* 2. Quick Actions Bar */}
+      {/* 2. Live Pit Stream Ticker (Pre-Context Inbound Stream) */}
+      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg transition-all">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500" />
+            </span>
+            <div className="flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
+                Live PIT Stream Ticker
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/60 font-semibold">
+                Rule B2 Buffer ({pitRecords.length} staged)
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleForceSync}
+              disabled={isForceSyncing}
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold shadow-sm flex items-center gap-1 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${isForceSyncing ? 'animate-spin' : ''}`} />
+              <span>Force Sync</span>
+            </button>
+            <button
+              onClick={() => setIsPitCollapsed(!isPitCollapsed)}
+              className="p-1 text-slate-400 hover:text-white rounded-md transition-colors"
+            >
+              {isPitCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        {!isPitCollapsed && (
+          <div className="mt-3 pt-3 border-t border-slate-800/80 space-y-2">
+            {pitRecords.length === 0 ? (
+              <div className="flex items-center justify-between text-xs text-slate-400 py-1 font-mono">
+                <span>Inbound broker listening for plugin telemetry...</span>
+                <span className="text-[10px] text-slate-500">2500ms Debounce</span>
+              </div>
+            ) : (
+              pitRecords.slice(0, 3).map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800/60 text-xs font-mono"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <span
+                      className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded ${
+                        item.status === 'staged'
+                          ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                          : item.status === 'synced'
+                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                          : 'bg-rose-950 text-rose-300 border border-rose-800'
+                      }`}
+                    >
+                      {item.status}
+                    </span>
+                    <span className="text-white font-semibold">{item.source_plugin_id}</span>
+                    <span className="text-slate-400 truncate">
+                      {JSON.stringify(item.payload)}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-indigo-300 bg-indigo-950/80 px-2 py-0.5 rounded shrink-0 border border-indigo-800/50">
+                    Pri {item.priority} / Sev {item.severity}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* 3. Quick Actions Bar */}
       <section className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
         <button
           onClick={onOpenStartActivity}

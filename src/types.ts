@@ -262,6 +262,7 @@ export enum NavTab {
   TODAY = "TODAY",
   TIMELINE = "TIMELINE",
   TASKS = "TASKS",
+  PLUGINS = "PLUGINS",
   HEALTH = "HEALTH",
   LEARN = "LEARN",
   INSIGHTS = "INSIGHTS",

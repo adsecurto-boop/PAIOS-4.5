@@ -35,6 +35,7 @@ import { initBackgroundVersionChecker, onVersionUpdateAvailable, VersionManifest
 import { TodayScreen } from './screens/TodayScreen';
 import { TimelineScreen } from './screens/TimelineScreen';
 import { TasksScreen } from './screens/TasksScreen';
+import { PluginsScreen } from './screens/PluginsScreen';
 import { HealthScreen } from './screens/HealthScreen';
 import { LearnScreen } from './screens/LearnScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
@@ -1011,6 +1012,13 @@ export const App: React.FC = () => {
                   onToggleTaskPriorityPin={handleToggleTaskPriority}
                   onDeleteTask={handleDeleteTask}
                   onOpenAddTask={() => setShowTaskModal(true)}
+                />
+              )}
+
+              {activeTab === NavTab.PLUGINS && (
+                <PluginsScreen
+                  onTriggerAiTimetable={handleGenerateTimetable}
+                  isAiScheduling={isGeneratingTimetable}
                 />
               )}
 
