@@ -293,7 +293,7 @@ export const AiScreen: React.FC<AiScreenProps> = ({
           {activeActivity ? (
             <div className="flex items-center gap-1.5 text-amber-300 font-mono font-medium">
               <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-              <span>Active: {activeActivity.activity}</span>
+              <span>Active: {activeActivity.activityName}</span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5 text-slate-400">

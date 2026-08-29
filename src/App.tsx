@@ -1076,7 +1076,7 @@ export const App: React.FC = () => {
                   onExecuteAction={handleExecuteAiAction}
                   onClearHistory={handleClearAiChat}
                   activeActivity={activeActivity}
-                  tasksCount={tasks.filter((t) => !t.completed).length}
+                  tasksCount={tasks.filter((t) => t.status !== 'COMPLETED').length}
                   dueFlashcardsCount={studyCards.length}
                   onNavigateTab={(tab) => setActiveTab(tab)}
                   onOpenQuickCapture={() => setShowQuickCaptureModal(true)}

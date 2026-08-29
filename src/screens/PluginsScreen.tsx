@@ -848,7 +848,7 @@ export const PluginsScreen: React.FC<PluginsScreenProps> = ({
             ) : (
               filteredPitRecords.map((record) => {
                 const priorityVal = record.priority === 'critical' ? 100 : record.priority === 'high' ? 75 : record.priority === 'medium' ? 50 : 25;
-                const severityVal = record.severity === 'critical' ? 100 : record.severity === 'error' ? 75 : record.severity === 'warning' ? 50 : 25;
+                const severityVal = (record.severity as string) === 'blocker' || (record.severity as string) === 'critical' ? 100 : record.severity === 'error' ? 75 : record.severity === 'warning' ? 50 : 25;
                 const compositeScore = Math.round(priorityVal * 0.6 + severityVal * 0.4);
 
                 return (
