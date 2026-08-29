@@ -183,6 +183,103 @@ ipcMain.handle('paios:reload', () => {
   return false;
 });
 
+// IPC Handler: Download Windows Desktop Update Package
+ipcMain.handle('paios:download-update', async (event, { url, version }) => {
+  const updatesDir = path.join(app.getPath('userData'), 'updates');
+  if (!fs.existsSync(updatesDir)) {
+    fs.mkdirSync(updatesDir, { recursive: true });
+  }
+
+  const filename = `PAIOS-Desktop-Windows-v${version || 'latest'}.zip`;
+  const destPath = path.join(updatesDir, filename);
+
+  return new Promise((resolve, reject) => {
+    function fetchWithRedirects(targetUrl) {
+      const client = targetUrl.startsWith('https') ? require('https') : require('http');
+      client.get(targetUrl, { headers: { 'User-Agent': 'PAIOS-Desktop-Updater' } }, (res) => {
+        // Follow HTTP redirects
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return fetchWithRedirects(res.headers.location);
+        }
+
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Download failed with HTTP status ${res.statusCode}`));
+        }
+
+        const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+        let transferredBytes = 0;
+        const startTime = Date.now();
+
+        const fileStream = fs.createWriteStream(destPath);
+        res.pipe(fileStream);
+
+        res.on('data', (chunk) => {
+          transferredBytes += chunk.length;
+          const elapsedSec = (Date.now() - startTime) / 1000;
+          const speed = elapsedSec > 0 ? Math.round(transferredBytes / elapsedSec) : 0;
+          const percent = totalBytes > 0 ? Math.min(100, Math.round((transferredBytes / totalBytes) * 100)) : 50;
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('paios:update-download-progress', {
+              percent,
+              transferredBytes,
+              totalBytes: totalBytes || transferredBytes,
+              speedBytesPerSec: speed,
+              status: 'downloading',
+            });
+          }
+        });
+
+        fileStream.on('finish', () => {
+          fileStream.close();
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('paios:update-download-progress', {
+              percent: 100,
+              transferredBytes,
+              totalBytes: transferredBytes,
+              status: 'ready',
+            });
+          }
+          resolve(destPath);
+        });
+
+        fileStream.on('error', (err) => {
+          fs.unlink(destPath, () => {});
+          reject(err);
+        });
+      }).on('error', (err) => {
+        reject(err);
+      });
+    }
+
+    fetchWithRedirects(url);
+  });
+});
+
+// IPC Handler: Apply Windows Desktop Update
+ipcMain.handle('paios:apply-update', async (event, { version, filePath }) => {
+  const updatesDir = path.join(app.getPath('userData'), 'updates');
+  const targetFile = filePath || path.join(updatesDir, `PAIOS-Desktop-Windows-v${version || 'latest'}.zip`);
+
+  if (fs.existsSync(targetFile)) {
+    require('electron').shell.showItemInFolder(targetFile);
+  }
+
+  if (mainWindow) {
+    mainWindow.reload();
+  }
+  return true;
+});
+
+// IPC Handler: Open External Browser Link
+ipcMain.handle('paios:open-external', async (event, targetUrl) => {
+  if (targetUrl) {
+    require('electron').shell.openExternal(targetUrl);
+    return true;
+  }
+  return false;
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

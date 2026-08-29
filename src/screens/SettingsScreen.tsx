@@ -3,6 +3,7 @@ import { Settings, User, Key, Cpu, Database, RefreshCw, Download, Check, Monitor
 import { UserSettings } from '../types';
 import { CloudSyncBanner } from '../components/CloudSyncBanner';
 import { AutoUpdateSyncBanner } from '../components/AutoUpdateSyncBanner';
+import { SoftwareUpdateCard } from '../components/SoftwareUpdateCard';
 import { exportAndShareBackup } from '../utils/exportShare';
 
 interface SettingsScreenProps {
@@ -91,6 +92,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       {/* Google SSO & Firestore Realtime Cloud Sync Banner */}
       <CloudSyncBanner />
+
+      {/* In-App Software Updates & Release Manager */}
+      <SoftwareUpdateCard />
 
       {/* Git Commit Auto-Update & Cross-Platform Sync Banner */}
       <AutoUpdateSyncBanner />

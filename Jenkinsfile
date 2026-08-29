@@ -66,6 +66,36 @@ pipeline {
             steps {
                 echo "=== Compiling Production Web Assets ==="
                 bat 'npm run build'
+                
+                // Generate In-App Update Manifest (version.json)
+                powershell '''
+                $manifest = @"
+{
+  "version": "1.0.0",
+  "buildNumber": "$($env:BUILD_NUMBER)",
+  "buildTimestamp": $([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()),
+  "gitCommit": "$($env:GIT_COMMIT)",
+  "releaseDate": "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")",
+  "releaseNotes": "PAIOS Multi-Platform Build #$($env:BUILD_NUMBER) (Commit $($env:GIT_COMMIT))",
+  "mandatory": false,
+  "platforms": {
+    "windows": {
+      "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip",
+      "filename": "PAIOS-Desktop-Windows-x64.zip",
+      "version": "1.0.0"
+    },
+    "android": {
+      "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk",
+      "filename": "app-release.apk",
+      "version": "1.0.0"
+    }
+  }
+}
+"@
+                Set-Content -Path "dist/version.json" -Value $manifest
+                Set-Content -Path "version.json" -Value $manifest
+                Write-Output "[INFO] Generated update manifests at dist/version.json and version.json"
+                '''
             }
         }
 
@@ -277,7 +307,7 @@ Platform: Windows x64 Desktop
         stage('Archive Artifacts') {
             steps {
                 echo "=== Archiving Android & Desktop Output Artifacts ==="
-                archiveArtifacts artifacts: 'android/app/build/outputs/apk/**/*.apk, dist-electron/**/*.exe, dist-electron/**/*.zip, dist-electron/BUILD_INFO.txt', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'android/app/build/outputs/apk/**/*.apk, dist-electron/**/*.exe, dist-electron/**/*.zip, dist-electron/BUILD_INFO.txt, dist/version.json, version.json', allowEmptyArchive: true
             }
         }
     }

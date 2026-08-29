@@ -1,19 +1,11 @@
 // PAIOS Version Manifest & Background Update Checker
-export interface VersionManifest {
-  version: string;
-  buildTimestamp: number;
-  gitCommit: string;
-  releaseNotes?: string;
-  mandatory?: boolean;
-}
+import { UpdateService, VersionManifest, CURRENT_CLIENT_VERSION } from '../services/UpdateService';
 
-// Current client runtime version information
-export const CLIENT_VERSION: VersionManifest = {
-  version: '1.0.0',
-  buildTimestamp: 1787463500000,
-  gitCommit: 'c9f81a2',
-  releaseNotes: 'PAIOS Baseline Desktop & Mobile Client Version',
-};
+export type { VersionManifest, PlatformAssetInfo, DownloadProgress } from '../services/UpdateService';
+export { CURRENT_CLIENT_VERSION } from '../services/UpdateService';
+
+// Re-export CLIENT_VERSION for backward compatibility
+export const CLIENT_VERSION: VersionManifest = CURRENT_CLIENT_VERSION;
 
 export type UpdateCallback = (manifest: VersionManifest) => void;
 const updateListeners: Set<UpdateCallback> = new Set();
@@ -53,7 +45,6 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
         if (installingWorker) {
           installingWorker.onstatechange = () => {
             if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // New service worker installed and waiting
               checkForAppUpdates();
             }
           };
@@ -69,40 +60,24 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 }
 
 /**
- * Fetches version manifest from the server (/api/version) and checks if a newer version exists
+ * Fetches version manifest and checks if a newer version exists
  */
 export async function checkForAppUpdates(): Promise<{ updateAvailable: boolean; serverManifest: VersionManifest | null }> {
   try {
-    const res = await fetch('/api/version?t=' + Date.now(), {
-      headers: { 'Cache-Control': 'no-cache' },
-    });
+    const result = await UpdateService.checkForUpdates();
+    if (result.updateAvailable) {
+      latestAvailableManifest = result.manifest;
+      updateListeners.forEach((cb) => cb(result.manifest));
 
-    if (!res.ok) {
-      return { updateAvailable: false, serverManifest: null };
+      window.dispatchEvent(
+        new CustomEvent('paios_version_update_available', {
+          detail: result.manifest,
+        })
+      );
     }
-
-    const serverManifest: VersionManifest = await res.json();
-
-    // Determine if update is newer by comparing gitCommit, buildTimestamp, or version string
-    const isNewerCommit = serverManifest.gitCommit && serverManifest.gitCommit !== CLIENT_VERSION.gitCommit;
-    const isNewerTimestamp = serverManifest.buildTimestamp > CLIENT_VERSION.buildTimestamp;
-    const isNewerVersionStr = serverManifest.version !== CLIENT_VERSION.version;
-
-    const isUpdateAvailable = isNewerCommit || isNewerTimestamp || isNewerVersionStr;
-
-    if (isUpdateAvailable) {
-      latestAvailableManifest = serverManifest;
-      updateListeners.forEach((cb) => cb(serverManifest));
-      
-      // Also trigger window custom event for components listening
-      window.dispatchEvent(new CustomEvent('paios_version_update_available', {
-        detail: serverManifest,
-      }));
-    }
-
-    return { updateAvailable: isUpdateAvailable, serverManifest };
+    return { updateAvailable: result.updateAvailable, serverManifest: result.manifest };
   } catch (err) {
-    console.warn('[PAIOS AutoUpdate] Unable to fetch version manifest:', err);
+    console.warn('[PAIOS AutoUpdate] Check for updates failed:', err);
     return { updateAvailable: false, serverManifest: null };
   }
 }
@@ -111,18 +86,13 @@ export async function checkForAppUpdates(): Promise<{ updateAvailable: boolean; 
  * Initializes the background update checker at app launch
  */
 export function initBackgroundVersionChecker(): void {
-  // 1. Register Service Worker
   registerServiceWorker();
-
-  // 2. Perform initial version check at launch
   checkForAppUpdates();
 
-  // 3. Re-check whenever window regains focus
   window.addEventListener('focus', () => {
     checkForAppUpdates();
   });
 
-  // 4. Periodically check every 4 minutes in the background
   if (!checkIntervalTimer) {
     checkIntervalTimer = setInterval(() => {
       checkForAppUpdates();
@@ -134,11 +104,5 @@ export function initBackgroundVersionChecker(): void {
  * Prompts Service Worker to skip waiting and reloads the application to apply the latest build
  */
 export function applyUpdateAndReload(): void {
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
-  }
-  // Hard reload with query param to bypass browser cache
-  const url = new URL(window.location.href);
-  url.searchParams.set('v', Date.now().toString());
-  window.location.href = url.toString();
+  UpdateService.installUpdate(latestAvailableManifest || CURRENT_CLIENT_VERSION);
 }

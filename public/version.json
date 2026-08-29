@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "buildNumber": "1",
+  "buildTimestamp": 1787463500000,
+  "gitCommit": "0a50906",
+  "releaseNotes": "PAIOS Baseline Multi-Platform Build with In-App Updater for Windows & Android",
+  "mandatory": false,
+  "platforms": {
+    "windows": {
+      "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip",
+      "filename": "PAIOS-Desktop-Windows-x64.zip",
+      "version": "1.0.0"
+    },
+    "android": {
+      "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk",
+      "filename": "app-release.apk",
+      "version": "1.0.0"
+    },
+    "web": {
+      "version": "1.0.0"
+    }
+  }
+}

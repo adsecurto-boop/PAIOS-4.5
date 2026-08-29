@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import jwt from 'jsonwebtoken';
@@ -56,6 +57,70 @@ export function requireAuth(req: express.Request, res: express.Response, next: e
 // API Endpoint: Health
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', app: 'PAIOS' });
+});
+
+// --- IN-APP SOFTWARE UPDATE & VERSION ENDPOINTS ---
+const dynamicVersionManifest: any = {
+  version: '1.0.0',
+  buildNumber: '1',
+  buildTimestamp: Date.now(),
+  gitCommit: '0a50906',
+  releaseNotes: 'PAIOS Baseline Desktop & Mobile Client Version',
+  platforms: {
+    windows: {
+      url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
+      filename: 'PAIOS-Desktop-Windows-x64.zip',
+    },
+    android: {
+      url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk',
+      filename: 'app-release.apk',
+    },
+  },
+};
+
+// API Endpoint: Version Check Manifest
+app.get('/api/version', (_req, res) => {
+  const versionPath = path.join(_dirname, 'dist', 'version.json');
+  if (fs.existsSync(versionPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(versionPath, 'utf-8'));
+      return res.json(data);
+    } catch (e) {}
+  }
+  res.json(dynamicVersionManifest);
+});
+
+// API Endpoint: Publish New Version
+app.post('/api/version/publish', (req, res) => {
+  const { gitCommit, version, releaseNotes, platforms } = req.body || {};
+  if (gitCommit) dynamicVersionManifest.gitCommit = gitCommit;
+  if (version) dynamicVersionManifest.version = version;
+  if (releaseNotes) dynamicVersionManifest.releaseNotes = releaseNotes;
+  if (platforms) dynamicVersionManifest.platforms = { ...dynamicVersionManifest.platforms, ...platforms };
+  dynamicVersionManifest.buildTimestamp = Date.now();
+  res.json({ success: true, manifest: dynamicVersionManifest });
+});
+
+// API Endpoint: Download Platform Binary (Windows ZIP / Android APK)
+app.get('/api/version/download/:platform', (req, res) => {
+  const platform = req.params.platform;
+  if (platform === 'android') {
+    const apkPath = path.join(_dirname, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
+    const debugApkPath = path.join(_dirname, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
+    if (fs.existsSync(apkPath)) {
+      return res.download(apkPath, 'PAIOS-Release.apk');
+    } else if (fs.existsSync(debugApkPath)) {
+      return res.download(debugApkPath, 'PAIOS-Debug.apk');
+    }
+    return res.redirect('https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk');
+  } else if (platform === 'windows') {
+    const zipPath = path.join(_dirname, 'dist-electron', 'PAIOS-Desktop-Windows-x64.zip');
+    if (fs.existsSync(zipPath)) {
+      return res.download(zipPath, 'PAIOS-Desktop-Windows-x64.zip');
+    }
+    return res.redirect('https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip');
+  }
+  res.status(404).json({ error: 'Platform not found' });
 });
 
 // --- AUTHENTICATION ENDPOINTS ---
