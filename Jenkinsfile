@@ -221,9 +221,29 @@ pipeline {
                             @echo off
                             echo [STATUS] Compiling Android APKs (assembleDebug assembleRelease)...
                             if exist gradlew.bat (
+                                echo [INFO] Local gradlew.bat found. Assembling APKs...
                                 call gradlew.bat assembleDebug assembleRelease --no-daemon --stacktrace
+                                exit /b %ERRORLEVEL%
+                            )
+                            
+                            echo [WARN] gradlew.bat not found. Checking for global 'gradle'...
+                            where gradle >nul 2>&1
+                            if %ERRORLEVEL% equ 0 (
+                                echo [INFO] Global gradle found. Executing assembleDebug assembleRelease...
+                                call gradle assembleDebug assembleRelease --no-daemon --stacktrace
+                                exit /b %ERRORLEVEL%
+                            )
+                            
+                            echo [INFO] Provisioning Gradle wrapper v8.2...
+                            if not exist gradle\\wrapper mkdir gradle\\wrapper
+                            powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew.bat', 'gradlew.bat'); (New-Object Net.WebClient).DownloadFile('https://github.com/gradle/gradle/raw/v8.2.0/gradle/wrapper/gradle-wrapper.jar', 'gradle/wrapper/gradle-wrapper.jar'); Set-Content -Path 'gradle/wrapper/gradle-wrapper.properties' -Value 'distributionBase=GRADLE_USER_HOME`ndistributionPath=wrapper/dists`ndistributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip`nzipStoreBase=GRADLE_USER_HOME`nzipStorePath=wrapper/dists'"
+                            
+                            if exist gradlew.bat (
+                                call gradlew.bat assembleDebug assembleRelease --no-daemon --stacktrace
+                                exit /b %ERRORLEVEL%
                             ) else (
-                                call gradle assembleDebug assembleRelease --no-daemon
+                                echo [ERROR] Unable to compile Android APK: gradlew.bat or gradle not found.
+                                exit /b 1
                             )
                             '''
                         }
@@ -234,14 +254,15 @@ pipeline {
                     steps {
                         echo "=== Packaging PAIOS Desktop for Windows (x64) ==="
                         powershell '''
+                        $ErrorActionPreference = 'Continue'
                         Write-Output "[INFO] Packaging Electron Desktop App..."
                         if (Test-Path "dist-electron") {
                             Remove-Item -Recurse -Force "dist-electron" -ErrorAction SilentlyContinue
                         }
                         New-Item -ItemType Directory -Path "dist-electron" -Force | Out-Null
 
-                        # Execute Electron Packager build command
-                        npm run build:exe
+                        # Execute Electron Packager build command safely
+                        cmd.exe /c "npm run build:exe" 2>&1 | Out-Default
 
                         # Locate packaged directory and compress into ZIP archive
                         $packDir = Get-ChildItem -Path "dist-electron" -Directory | Where-Object { $_.Name -like "*PAIOS Desktop*" } | Select-Object -First 1
