@@ -1,0 +1,33 @@
+*.iml
+.gradle
+.kotlin
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.env
+debug.keystore
+
+# Database & Lock Files
+data/*.sqlite*
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+backups/*.sqlite*
+logs/
+
+# Build outputs
+dist-electron/
+
+# Ensure Android resources, xml templates, and drawable mipmaps are NEVER ignored
+!android/app/src/main/res/**/*
+node_modules

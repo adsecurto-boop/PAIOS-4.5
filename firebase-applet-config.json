@@ -1,0 +1,12 @@
+{
+  "projectId": "paios-app",
+  "appId": "1:97625194970:android:94f6f1108672eec72580e3",
+  "apiKey": "AIzaSyDWFAeBPx4cqE5didGnl3bYJYndB8Ucbgk",
+  "authDomain": "paios-app.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "paios-app.firebasestorage.app",
+  "messagingSenderId": "97625194970",
+  "measurementId": "",
+  "oAuthClientId": "97625194970-bdmi8qk7ppe067gd240ibpu15jhrhcpo.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
+}

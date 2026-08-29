@@ -1,0 +1,353 @@
+pipeline {
+    agent any
+
+    environment {
+        REPO_OWNER   = 'adsecurto-boop'
+        REPO_NAME    = 'PAIOS-4.3'
+        
+        // Define or default common Java and Android SDK environment variables for Windows agents
+        JAVA_HOME    = "${env.JAVA_HOME ?: 'C:\\Program Files\\Java\\jdk-17'}"
+        ANDROID_HOME = "${env.ANDROID_HOME ?: env.ANDROID_SDK_ROOT ?: 'C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk'}"
+        
+        // Update PATH to include the configured Java and Android SDK tool binaries
+        PATH         = "${env.JAVA_HOME}\\bin;${env.ANDROID_HOME}\\platform-tools;${env.ANDROID_HOME}\\tools\\bin;${env.PATH}"
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    triggers {
+        githubPush()
+        pollSCM('H/5 * * * *')
+    }
+
+    stages {
+        stage('Notify GitHub - Pending') {
+            steps {
+                script {
+                    updateGitHubCommitStatus('PENDING', 'Android APK build in progress...')
+                }
+            }
+        }
+
+        stage('Checkout SCM') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Node Dependencies') {
+            steps {
+                echo "=== Installing Node Dependencies ==="
+                bat 'IF EXIST package-lock.json ( npm ci || npm install ) ELSE ( npm install )'
+            }
+        }
+
+        stage('Build Web Assets & Sync Capacitor') {
+            steps {
+                bat 'npm run build'
+                bat 'npx cap sync android'
+            }
+        }
+
+        stage('Inject Google Services Configuration') {
+            steps {
+                powershell '''
+                # Safely resolve absolute path to guarantee execution context remains inside workspace (not System32)
+                $absolutePath = Join-Path $pwd "android/app/google-services.json"
+                $parentDir = Split-Path $absolutePath -Parent
+                
+                if (!(Test-Path $parentDir)) {
+                    New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+                }
+                
+                $jsonContent = @'
+{
+  "project_info": {
+    "project_number": "97625194970",
+    "project_id": "paios-app",
+    "storage_bucket": "paios-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:97625194970:android:94f6f1108672eec72580e3",
+        "android_client_info": {
+          "package_name": "com.paios.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "97625194970-bdmi8qk7ppe067gd240ibpu15jhrhcpo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDWFAeBPx4cqE5didGnl3bYJYndB8Ucbgk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "97625194970-bdmi8qk7ppe067gd240ibpu15jhrhcpo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+'@
+                [System.IO.File]::WriteAllText($absolutePath, $jsonContent, [System.Text.Encoding]::UTF8)
+                Write-Output "[INFO] Synchronized $absolutePath with PAIOS Firebase configuration."
+                '''
+            }
+        }
+
+        stage('Ensure Android Resources & Launcher Icons') {
+            steps {
+                powershell '''
+                $resPath = Join-Path $pwd "android/app/src/main/res"
+                
+                # Helper to create folders if they don't exist
+                function Create-Folder($dir) {
+                    if (!(Test-Path $dir)) {
+                        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                    }
+                }
+                
+                # 1. Ensure density folders exist
+                $densities = @(
+                    @{ Name = "mipmap-mdpi"; Size = 48 },
+                    @{ Name = "mipmap-hdpi"; Size = 72 },
+                    @{ Name = "mipmap-xhdpi"; Size = 96 },
+                    @{ Name = "mipmap-xxhdpi"; Size = 144 },
+                    @{ Name = "mipmap-xxxhdpi"; Size = 192 }
+                )
+                
+                # Force create res directories
+                Create-Folder (Join-Path $resPath "drawable")
+                Create-Folder (Join-Path $resPath "mipmap-anydpi-v26")
+                
+                # 2. Unconditionally write XML drawables
+                $bgXml = @'
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#3D5AFE"
+        android:pathData="M0,0h108v108H0z"/>
+</vector>
+'@
+                [System.IO.File]::WriteAllText((Join-Path $resPath "drawable/ic_launcher_background.xml"), $bgXml, [System.Text.Encoding]::UTF8)
+
+                $fgXml = @'
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,30h48v48H30z"/>
+</vector>
+'@
+                [System.IO.File]::WriteAllText((Join-Path $resPath "drawable/ic_launcher_foreground.xml"), $fgXml, [System.Text.Encoding]::UTF8)
+
+                $adaptiveXml = @'
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background"/>
+    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+</adaptive-icon>
+'@
+                [System.IO.File]::WriteAllText((Join-Path $resPath "mipmap-anydpi-v26/ic_launcher.xml"), $adaptiveXml, [System.Text.Encoding]::UTF8)
+                [System.IO.File]::WriteAllText((Join-Path $resPath "mipmap-anydpi-v26/ic_launcher_round.xml"), $adaptiveXml, [System.Text.Encoding]::UTF8)
+
+                # 3. Create bitmap PNG icons using GDI+
+                Add-Type -AssemblyName System.Drawing
+                
+                foreach ($d in $densities) {
+                    $dir = Join-Path $resPath $d.Name
+                    Create-Folder $dir
+                    
+                    $size = $d.Size
+                    $targets = @("ic_launcher.png", "ic_launcher_round.png")
+                    
+                    foreach ($t in $targets) {
+                        $targetPath = Join-Path $dir $t
+                        if (!(Test-Path $targetPath)) {
+                            $bmp = New-Object System.Drawing.Bitmap($size, $size)
+                            $g = [System.Drawing.Graphics]::FromImage($bmp)
+                            $g.Clear([System.Drawing.Color]::FromArgb(255, 61, 90, 254)) # Matching #3D5AFE
+                            $bmp.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Png)
+                            $g.Dispose()
+                            $bmp.Dispose()
+                            Write-Output "[INFO] Generated launcher fallback: $targetPath ($($size)x$size)"
+                        }
+                    }
+                }
+                Write-Output "[INFO] Completed missing Android icon resource checks."
+                '''
+            }
+        }
+
+        stage('Assemble Android APK') {
+            steps {
+                dir('android') {
+                    bat '''
+                    @echo off
+                    echo [STATUS] Starting Android release APK compilation stage...
+                    
+                    if exist gradlew.bat goto RUN_LOCAL_WRAPPERS
+                    
+                    echo [WARN] gradlew.bat not found. Checking for global 'gradle' in PATH...
+                    where gradle >nul 2>&1
+                    if %ERRORLEVEL% neq 0 goto NO_GLOBAL_GRADLE
+                    
+                    echo [INFO] Global gradle found. Attempting to generate gradle wrapper...
+                    call gradle wrapper
+                    if not exist gradlew.bat goto FALLBACK_GLOBAL_GRADLE
+                    
+                    echo [INFO] Wrapper generated successfully. Building with gradlew.bat...
+                    call gradlew.bat assembleDebug assembleRelease --no-daemon --stacktrace
+                    exit /b %ERRORLEVEL%
+
+                    :FALLBACK_GLOBAL_GRADLE
+                    echo [WARN] Failed to generate local gradle wrapper. Falling back to direct global gradle invocation...
+                    call gradle assembleDebug assembleRelease --no-daemon
+                    exit /b %ERRORLEVEL%
+
+                    :NO_GLOBAL_GRADLE
+                    echo [WARN] Global gradle not found in PATH. Attempting to download Gradle Wrapper v8.2.0 for maximum resilience...
+                    if not exist gradle\\wrapper mkdir gradle\\wrapper
+
+                    echo [INFO] Downloading gradlew.bat...
+                    curl -k -sS -L -o gradlew.bat https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew.bat || powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradlew.bat' -OutFile 'gradlew.bat'"
+
+                    echo [INFO] Downloading gradle-wrapper.jar...
+                    curl -k -sS -L -o gradle\\wrapper\\gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.2.0/gradle/wrapper/gradle-wrapper.jar || powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/gradle/gradle/raw/v8.2.0/gradle/wrapper/gradle-wrapper.jar' -OutFile 'gradle\\wrapper\\gradle-wrapper.jar'"
+
+                    echo [INFO] Creating gradle-wrapper.properties...
+                    (
+                        echo distributionBase=GRADLE_USER_HOME
+                        echo distributionPath=wrapper/dists
+                        echo distributionUrl=https\\://services.gradle.org/distributions/gradle-8.2-bin.zip
+                        echo zipStoreBase=GRADLE_USER_HOME
+                        echo zipStorePath=wrapper/dists
+                    ) > gradle\\wrapper\\gradle-wrapper.properties
+
+                    if not exist gradlew.bat goto BUILD_FAILED_FINAL
+                    echo [INFO] Gradle wrapper downloaded successfully. Building release APK...
+                    call gradlew.bat assembleDebug assembleRelease --no-daemon --stacktrace
+                    exit /b %ERRORLEVEL%
+
+                    :RUN_LOCAL_WRAPPERS
+                    echo [INFO] Local gradlew.bat found. Executing build...
+                    call gradlew.bat assembleDebug assembleRelease --no-daemon --stacktrace
+                    exit /b %ERRORLEVEL%
+
+                    :BUILD_FAILED_FINAL
+                    echo [ERROR] Build Failure: Neither local gradlew.bat, global gradle, nor wrapper download was successful.
+                    echo [ERROR] Please verify that Java, Gradle, and the Android SDK are installed and configured on the build agent.
+                    exit /b 1
+                    '''
+                }
+            }
+        }
+
+        stage('Archive Android APK Artifacts') {
+            steps {
+                // Archive release, debug, signed, and unsigned APKs cleanly
+                archiveArtifacts artifacts: 'android/app/build/outputs/apk/**/*.apk', allowEmptyArchive: true
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                echo 'Cleaning ephemeral cache and build temporary directories...'
+                try {
+                    bat 'if exist android\\app\\build\\tmp ( rmdir /s /q android\\app\\build\\tmp )'
+                } catch (Exception e) {
+                    echo "Warning: Ephemeral cache directory cleanup failed: ${e.message}"
+                }
+            }
+        }
+        success {
+            script {
+                updateGitHubCommitStatus('SUCCESS', 'Android APK build completed successfully!')
+            }
+            echo 'PAIOS Android Release APK Built Successfully.'
+        }
+        failure {
+            script {
+                updateGitHubCommitStatus('FAILURE', 'Android build failed.')
+            }
+            echo 'PAIOS Android Build Failed.'
+        }
+    }
+}
+
+void updateGitHubCommitStatus(String state, String description) {
+    def context = 'Jenkins/PAIOS-Android'
+    
+    // Resolve dynamic Repo Owner and Repo Name if not already overridden
+    def repoOwner = env.REPO_OWNER ?: 'adsecurto-boop'
+    def repoName = env.REPO_NAME ?: 'PAIOS-4.3'
+    
+    try {
+        def remoteUrl = bat(script: 'git config --get remote.origin.url', returnStdout: true).trim()
+        // Matches e.g., https://github.com/adsecurto-boop/PAIOS-4.3.git or git@github.com:adsecurto-boop/PAIOS-4.3.git
+        def matcher = remoteUrl =~ /(?:github\.com[:\/])([^\/]+)\/([^\/\.]+?)(?:\.git)?\s*$/
+        if (matcher) {
+            repoOwner = matcher[0][1].trim()
+            repoName  = matcher[0][2].trim()
+            echo "Dynamically resolved repository from origin: ${repoOwner}/${repoName}"
+        }
+    } catch (Exception e) {
+        echo "Could not dynamically resolve repository: ${e.message}. Using default: ${repoOwner}/${repoName}"
+    }
+
+    def commitSha = env.GIT_COMMIT
+    if (!commitSha) {
+        try {
+            commitSha = bat(script: 'git rev-parse HEAD', returnStdout: true).trim()
+        } catch (Exception e) {
+            echo "Could not parse GIT_COMMIT from environment or git command: ${e.message}"
+            return
+        }
+    }
+    
+    try {
+        withCredentials([string(credentialsId: 'github-pat-token', variable: 'GITHUB_TOKEN')]) {
+            if (env.GITHUB_TOKEN && commitSha) {
+                def targetUrl = "${env.BUILD_URL}console"
+                // Correctly double-escape double quotes for cmd.exe interpretation
+                def payload = """{\\"state\\": \\"${state.toLowerCase()}\\", \\"target_url\\": \\"${targetUrl}\\", \\"description\\": \\"${description}\\", \\"context\\": \\"${context}\\"}"""
+                
+                try {
+                    bat "curl -f -X POST -H \"Authorization: token %GITHUB_TOKEN%\" -H \"Accept: application/vnd.github.v3+json\" -H \"Content-Type: application/json\" -d \"${payload}\" https://api.github.com/repos/${repoOwner}/${repoName}/statuses/${commitSha}"
+                } catch (Exception e) {
+                    echo "Warning: Failed to send status update to GitHub: ${e.message}"
+                }
+            } else {
+                echo "Warning: GITHUB_TOKEN or commitSha not available. Skipping GitHub status notification."
+            }
+        }
+    } catch (Exception e) {
+        echo "Warning: 'github-pat-token' credentials could not be loaded or are missing in Jenkins. Skipping status notification. Error: ${e.message}"
+    }
+}
