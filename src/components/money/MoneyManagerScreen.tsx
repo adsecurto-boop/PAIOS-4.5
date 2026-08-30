@@ -153,9 +153,14 @@ Analyze the user's comprehensive wealth and cashflow profile:
 Provide a concise, 4-point actionable strategic optimization plan to eliminate debt, optimize family obligations, maximize daily savings, and accelerate 5-year investment growth. Format with clean bullet points.`;
 
     try {
-      const response = await sendClientGeminiChat({ userText: prompt });
+      const userSettings = PAIOSStorage.getSettings();
+      const response = await sendClientGeminiChat({
+        userText: prompt,
+        customApiKey: userSettings?.customApiKey,
+        modelName: userSettings?.preferredModel,
+      });
       setAiAdvice(response.text);
-    } catch (err) {
+    } catch (err: any) {
       setAiAdvice(
         `1. Maintain your daily spend below ${profile.currency}${analysis.safeToSpendDaily.toFixed(2)} to ensure end-of-month surplus.\n2. Prioritize high-interest debt clearance (${profile.debtInterestRate || 12}%) to save on interest costs.\n3. Automate your monthly ${profile.currency}${profile.investingMonthly} SIP into diversified index funds.\n4. Sweep any daily unspent surplus every night to compound extra returns.`
       );

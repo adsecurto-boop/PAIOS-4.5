@@ -1,10 +1,65 @@
 import { GoogleGenAI } from '@google/genai';
+import { PAIOSStorage } from './storage';
 
 export interface AiResponse {
   text: string;
   actionType?: string | null;
   actionPayloadJson?: string | null;
   error?: string;
+}
+
+/**
+ * Resolves the effective Gemini API key across multiple tiers:
+ * 1. Explicitly passed parameter
+ * 2. Stored user settings in PAIOSStorage
+ * 3. LocalStorage persistence key 'paios_settings'
+ * 4. Client environment variable VITE_GEMINI_API_KEY
+ * 5. Process environment variable GEMINI_API_KEY
+ */
+export function getEffectiveApiKey(customApiKey?: string): string | undefined {
+  if (customApiKey && typeof customApiKey === 'string' && customApiKey.trim()) {
+    return customApiKey.trim();
+  }
+
+  try {
+    const settings = PAIOSStorage.getSettings();
+    if (settings && settings.customApiKey && typeof settings.customApiKey === 'string' && settings.customApiKey.trim()) {
+      return settings.customApiKey.trim();
+    }
+  } catch (e) {}
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem('paios_settings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.customApiKey && typeof parsed.customApiKey === 'string' && parsed.customApiKey.trim()) {
+          return parsed.customApiKey.trim();
+        }
+      }
+    }
+  } catch (e) {}
+
+  return (
+    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
+    (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : undefined)
+  );
+}
+
+/**
+ * Resolves the effective preferred Gemini model
+ */
+export function getEffectiveModel(customModel?: string): string {
+  if (customModel && typeof customModel === 'string' && customModel.trim()) {
+    return customModel.trim();
+  }
+  try {
+    const settings = PAIOSStorage.getSettings();
+    if (settings && settings.preferredModel && typeof settings.preferredModel === 'string' && settings.preferredModel.trim()) {
+      return settings.preferredModel.trim();
+    }
+  } catch (e) {}
+  return 'gemini-2.5-flash';
 }
 
 // Client-Side Direct Gemini Call Fallback
@@ -17,13 +72,10 @@ export async function sendClientGeminiChat(params: {
   taskComplexity?: string;
   history?: any[];
 }): Promise<AiResponse> {
-  const { userText, userContext, customApiKey, role, history } = params;
+  const { userText, userContext, customApiKey, role, history, modelName } = params;
 
   // Check for client-side environment variable or user-provided key in Settings
-  const apiKey =
-    customApiKey ||
-    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-    (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : undefined);
+  const apiKey = getEffectiveApiKey(customApiKey);
 
   if (!apiKey) {
     return {
@@ -89,7 +141,18 @@ ${userContext || 'No context available.'}
       });
     }
 
-    const modelCandidates = ['gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-pro'];
+    const preferredModel = getEffectiveModel(modelName);
+    const candidatePool = [
+      preferredModel,
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.5-pro',
+      'gemini-1.5-pro',
+      'gemini-3.5-flash',
+      'gemini-3.1-flash-lite',
+    ];
+    const modelCandidates = Array.from(new Set(candidatePool.filter(Boolean)));
     let fullText = '';
     let lastError: any = null;
 
@@ -299,12 +362,10 @@ export async function sendClientGeminiTimetable(params: {
     bedtime = '00:00',
     adaptationReason,
     customApiKey,
+    modelName,
   } = params;
 
-  const apiKey =
-    customApiKey ||
-    (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-    (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : undefined);
+  const apiKey = getEffectiveApiKey(customApiKey);
 
   if (!apiKey) {
     return generateClientFallbackTimetable({
@@ -350,7 +411,16 @@ ${adaptationReason ? `Adaptation reason: "${adaptationReason}"` : ''}
 Context: ${userContext || 'No context'}
 `.trim();
 
-    const modelCandidates = ['gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+    const preferredModel = getEffectiveModel(modelName);
+    const candidatePool = [
+      preferredModel,
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-3.5-flash',
+      'gemini-3.1-flash-lite',
+    ];
+    const modelCandidates = Array.from(new Set(candidatePool.filter(Boolean)));
     let resultJsonText = '';
 
     for (const targetModel of modelCandidates) {
