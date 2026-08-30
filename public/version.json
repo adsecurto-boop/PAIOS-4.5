@@ -1,25 +1,25 @@
 {
-  "version": "4.5.4",
-  "buildNumber": "5",
-  "buildTimestamp": 1787500000000,
-  "gitCommit": "be03ac7",
-  "releaseNotes": "PAIOS v4.5.4: Money Manager Balance Sheet, Family Contribution & Interactive Debt/Invested Timelines",
+  "version": "4.5.5",
+  "buildNumber": "6",
+  "buildTimestamp": 1787600000000,
+  "gitCommit": "bb7b0f8",
+  "releaseNotes": "PAIOS v4.5.5: In-App Live Update System & Money Manager Wealth Projections",
   "mandatory": false,
   "platforms": {
     "windows": {
       "url": "https://raw.githubusercontent.com/adsecurto-boop/PAIOS-4.5/main/public/updates/PAIOS-Web-Dist.zip",
       "jenkinsUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
       "filename": "PAIOS-Web-Dist.zip",
-      "version": "4.5.4"
+      "version": "4.5.5"
     },
     "android": {
       "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk",
       "debugUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk",
       "filename": "app-release.apk",
-      "version": "4.5.4"
+      "version": "4.5.5"
     },
     "web": {
-      "version": "4.5.4"
+      "version": "4.5.5"
     }
   }
 }

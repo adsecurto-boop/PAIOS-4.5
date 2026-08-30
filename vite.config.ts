@@ -16,7 +16,7 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? './' : '/',
   plugins: [react(), tailwindcss()],
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version || '4.5.4'),
+    __APP_VERSION__: JSON.stringify(pkg.version || '4.5.5'),
     __GIT_COMMIT__: JSON.stringify(gitCommit),
     __BUILD_TIMESTAMP__: Date.now(),
   },

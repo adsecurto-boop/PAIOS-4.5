@@ -60,11 +60,11 @@ const getStoredActiveVersion = (): string | null => {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.4'),
-  buildNumber: '5',
+  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.5'),
+  buildNumber: '6',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
-  gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : '8bd340f'),
-  releaseNotes: 'PAIOS v4.5.4: Money Manager Balance Sheet, Family Contribution & Interactive Debt/Invested Timelines',
+  gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'a8356fe'),
+  releaseNotes: 'PAIOS v4.5.5: In-App Live Update System & Money Manager Wealth Projections',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
@@ -223,7 +223,7 @@ export class UpdateService {
     }
 
     // Compose final remote manifest
-    const targetVersion = fetchedManifest?.version || current.version || '4.5.4';
+    const targetVersion = fetchedManifest?.version || current.version || '4.5.5';
     const targetCommit =
       latestCommitInfo?.shortSha ||
       fetchedManifest?.gitCommit ||
@@ -231,7 +231,7 @@ export class UpdateService {
 
     const manifest: VersionManifest = {
       version: targetVersion,
-      buildNumber: fetchedManifest?.buildNumber || 5,
+      buildNumber: fetchedManifest?.buildNumber || 6,
       buildTimestamp:
         latestCommitInfo?.date
           ? new Date(latestCommitInfo.date).getTime()
@@ -243,7 +243,7 @@ export class UpdateService {
       releaseNotes:
         latestCommitInfo?.title ||
         fetchedManifest?.releaseNotes ||
-        'PAIOS v4.5.4: Money Manager Balance Sheet, Family Contribution & Interactive Debt/Invested Timelines',
+        'PAIOS v4.5.5: In-App Live Update System & Money Manager Wealth Projections',
       platforms: {
         windows: {
           url:
