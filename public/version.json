@@ -2,7 +2,7 @@
   "version": "4.5.5",
   "buildNumber": "6",
   "buildTimestamp": 1787600000000,
-  "gitCommit": "bb7b0f8",
+  "gitCommit": "a01c645",
   "releaseNotes": "PAIOS v4.5.5: In-App Live Update System & Money Manager Wealth Projections",
   "mandatory": false,
   "platforms": {
