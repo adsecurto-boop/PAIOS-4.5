@@ -75,7 +75,18 @@ function createWindow() {
   const remoteUrl = process.env.PAIOS_REMOTE_URL || config.liveUrl || DEFAULT_LIVE_URL;
 
   function loadLocalDist() {
-    if (fs.existsSync(distIndex)) {
+    const userDistIndex = path.join(app.getPath('userData'), 'current_dist', 'index.html');
+    const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
+
+    if (fs.existsSync(userDistIndex)) {
+      console.log('[PAIOS Electron] Loading updated live distribution from userData:', userDistIndex);
+      mainWindow.loadFile(userDistIndex).catch((err) => {
+        console.warn('Failed to load updated dist from userData, falling back to bundled:', err);
+        if (fs.existsSync(bundledDistIndex)) {
+          mainWindow.loadFile(bundledDistIndex);
+        }
+      });
+    } else if (fs.existsSync(distIndex)) {
       mainWindow.loadFile(distIndex).catch((err) => {
         console.warn('Failed to load dist/index.html:', err);
       });
@@ -276,24 +287,121 @@ ipcMain.handle('paios:download-update', async (event, { url, fallbackUrls = [], 
   });
 });
 
+// Helper: Extract Zip Archive via PowerShell Expand-Archive
+function extractZipArchive(zipFilePath, destinationDir) {
+  if (!fs.existsSync(destinationDir)) {
+    fs.mkdirSync(destinationDir, { recursive: true });
+  }
+  const { execSync } = require('child_process');
+  const safeZip = zipFilePath.replace(/'/g, "''");
+  const safeDest = destinationDir.replace(/'/g, "''");
+  execSync(`powershell -NoProfile -NonInteractive -Command "Expand-Archive -Path '${safeZip}' -DestinationPath '${safeDest}' -Force"`, {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+}
+
+// Helper: Recursively search folder for index.html
+function findDistFolder(dirPath, maxDepth = 4) {
+  if (maxDepth <= 0 || !fs.existsSync(dirPath)) return null;
+  const directIndex = path.join(dirPath, 'index.html');
+  if (fs.existsSync(directIndex)) {
+    return dirPath;
+  }
+  try {
+    const items = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const item of items) {
+      if (item.isDirectory() && item.name !== 'node_modules' && item.name !== '.git') {
+        const sub = path.join(dirPath, item.name);
+        const found = findDistFolder(sub, maxDepth - 1);
+        if (found) return found;
+      }
+    }
+  } catch (err) {}
+  return null;
+}
+
 // IPC Handler: Apply Windows Desktop Update
 ipcMain.handle('paios:apply-update', async (event, { version, filePath }) => {
   const updatesDir = path.join(app.getPath('userData'), 'updates');
-  const targetFile = filePath || path.join(updatesDir, `PAIOS-Desktop-Windows-v${version || 'latest'}.zip`);
+  const userDistDir = path.join(app.getPath('userData'), 'current_dist');
 
-  if (fs.existsSync(targetFile)) {
-    require('electron').shell.showItemInFolder(targetFile);
-  } else if (fs.existsSync(updatesDir)) {
-    require('electron').shell.openPath(updatesDir);
+  let zipToApply = filePath;
+  if (!zipToApply || !fs.existsSync(zipToApply)) {
+    if (fs.existsSync(updatesDir)) {
+      const files = fs.readdirSync(updatesDir).filter((f) => f.endsWith('.zip'));
+      if (files.length > 0) {
+        zipToApply = path.join(updatesDir, files[files.length - 1]);
+      }
+    }
   }
 
-  if (mainWindow) {
+  let extractedSuccessfully = false;
+
+  if (zipToApply && fs.existsSync(zipToApply)) {
+    console.log('[PAIOS Updater] Extracting update package:', zipToApply);
+    const tempExtractDir = path.join(updatesDir, 'temp_extract');
+    if (fs.existsSync(tempExtractDir)) {
+      fs.rmSync(tempExtractDir, { recursive: true, force: true });
+    }
+
+    try {
+      extractZipArchive(zipToApply, tempExtractDir);
+      const sourceDistDir = findDistFolder(tempExtractDir);
+
+      if (sourceDistDir) {
+        console.log('[PAIOS Updater] Found updated web distribution at:', sourceDistDir);
+        if (!fs.existsSync(userDistDir)) {
+          fs.mkdirSync(userDistDir, { recursive: true });
+        }
+        fs.cpSync(sourceDistDir, userDistDir, { recursive: true, force: true });
+
+        const activeManifest = {
+          version: version || '4.5.1',
+          appliedAt: Date.now(),
+          sourcePackage: zipToApply,
+        };
+        fs.writeFileSync(
+          path.join(app.getPath('userData'), 'active_version.json'),
+          JSON.stringify(activeManifest, null, 2),
+          'utf8'
+        );
+        extractedSuccessfully = true;
+      }
+
+      // Check if full .exe is present
+      const files = fs.readdirSync(tempExtractDir);
+      const exeFile = files.find((f) => f.toLowerCase().endsWith('.exe'));
+      if (exeFile) {
+        const permanentExeDir = path.join(updatesDir, 'latest_app');
+        if (!fs.existsSync(permanentExeDir)) {
+          fs.mkdirSync(permanentExeDir, { recursive: true });
+        }
+        fs.cpSync(tempExtractDir, permanentExeDir, { recursive: true, force: true });
+        require('electron').shell.showItemInFolder(path.join(permanentExeDir, exeFile));
+      }
+    } catch (err) {
+      console.error('[PAIOS Updater] Error during extraction and live asset update:', err);
+    }
+  }
+
+  // Reload window with updated assets
+  const updatedIndexHtml = path.join(userDistDir, 'index.html');
+  if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.webContents?.session) {
       await mainWindow.webContents.session.clearCache();
     }
-    mainWindow.reload();
+    if (fs.existsSync(updatedIndexHtml)) {
+      console.log('[PAIOS Updater] Live reloading with updated assets from:', updatedIndexHtml);
+      await mainWindow.loadFile(updatedIndexHtml);
+      return { success: true, updated: true };
+    } else {
+      mainWindow.reload();
+      return { success: true, updated: false };
+    }
   }
-  return true;
+
+  return { success: true, updated: extractedSuccessfully };
 });
 
 // IPC Handler: Open External Browser Link

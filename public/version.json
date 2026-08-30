@@ -1,18 +1,20 @@
 {
   "version": "4.5.1",
   "buildNumber": "2",
-  "buildTimestamp": 1787465000000,
-  "gitCommit": "db00164",
-  "releaseNotes": "PAIOS v4.5.1: Money Manager & Budget Analyzer Plugin and In-App Auto-Updater",
+  "buildTimestamp": 1787475000000,
+  "gitCommit": "49d386c",
+  "releaseNotes": "PAIOS v4.5.1: Money Manager & Budget Analyzer Plugin and Live Hot-Asset In-App Auto-Updater",
   "mandatory": false,
   "platforms": {
     "windows": {
-      "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip",
+      "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
+      "desktopZipUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip",
       "filename": "PAIOS-Desktop-Windows-x64.zip",
       "version": "4.5.1"
     },
     "android": {
-      "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk",
+      "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk",
+      "debugUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk",
       "filename": "app-release.apk",
       "version": "4.5.1"
     },

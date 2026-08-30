@@ -69,6 +69,7 @@ pipeline {
                 
                 // Generate In-App Update Manifest (version.json)
                 powershell '''
+                Compress-Archive -Path "dist/*" -DestinationPath "dist/PAIOS-Web-Dist.zip" -Force
                 $manifest = @"
 {
   "version": "4.5.1",
@@ -80,12 +81,14 @@ pipeline {
   "mandatory": false,
   "platforms": {
     "windows": {
-      "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip",
+      "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip",
+      "webDistUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
       "filename": "PAIOS-Desktop-Windows-x64.zip",
       "version": "4.5.1"
     },
     "android": {
-      "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk",
+      "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk",
+      "debugUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk",
       "filename": "app-release.apk",
       "version": "4.5.1"
     }
@@ -307,7 +310,7 @@ Platform: Windows x64 Desktop
         stage('Archive Artifacts') {
             steps {
                 echo "=== Archiving Android & Desktop Output Artifacts ==="
-                archiveArtifacts artifacts: 'android/app/build/outputs/apk/**/*.apk, dist-electron/**/*.exe, dist-electron/**/*.zip, dist-electron/BUILD_INFO.txt, dist/version.json, version.json', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'android/app/build/outputs/apk/**/*.apk, dist-electron/**/*.exe, dist-electron/**/*.zip, dist/**/*.zip, dist-electron/BUILD_INFO.txt, dist/version.json, version.json', allowEmptyArchive: true
             }
         }
     }

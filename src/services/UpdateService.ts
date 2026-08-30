@@ -293,6 +293,8 @@ export class UpdateService {
             // Candidate URLs for Electron download
             const candidateUrls = [
               manifest.platforms?.windows?.url,
+              'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip',
+              'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip',
               'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/PAIOS-Desktop-Windows-x64.zip',
               '/api/version/download/windows',
               'https://github.com/adsecurto-boop/PAIOS-4.5/archive/refs/heads/main.zip',

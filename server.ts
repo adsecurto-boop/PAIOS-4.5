@@ -115,10 +115,13 @@ app.get('/api/version/download/:platform', (req, res) => {
     return res.redirect('https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk');
   } else if (platform === 'windows') {
     const zipPath = path.join(_dirname, 'dist-electron', 'PAIOS-Desktop-Windows-x64.zip');
+    const webZipPath = path.join(_dirname, 'dist', 'PAIOS-Web-Dist.zip');
     if (fs.existsSync(zipPath)) {
       return res.download(zipPath, 'PAIOS-Desktop-Windows-x64.zip');
+    } else if (fs.existsSync(webZipPath)) {
+      return res.download(webZipPath, 'PAIOS-Web-Dist.zip');
     }
-    return res.redirect('https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip');
+    return res.redirect('https://raw.githubusercontent.com/adsecurto-boop/PAIOS-4.5/main/public/version.json');
   }
   res.status(404).json({ error: 'Platform not found' });
 });
