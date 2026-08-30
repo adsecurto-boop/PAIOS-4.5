@@ -12,12 +12,20 @@ export const DEFAULT_BUDGET_PROFILE: BudgetProfile = {
   monthlySalary: 5000,
   currency: '$',
   salaryCycleDay: 1,
+  // Balance Sheet & Wealth Base
+  currentBalance: 3500,
+  currentSaved: 8000,
+  currentDebt: 12000,
+  debtInterestRate: 12, // 12% p.a. debt rate
+  currentInvested: 15000,
+  savingsInterestRate: 4, // 4% p.a. savings yield
   // Necessities & Fixed Obligations
   foodMonthly: 800,
   travelMonthly: 300,
   healthMonthly: 250,
   housingMonthly: 1400,
   loanClearanceMonthly: 400,
+  familyContributionMonthly: 400, // Family support / parents contribution
   // Growth & Planned Expenses
   learningMonthly: 200,
   investingMonthly: 650,
@@ -33,6 +41,32 @@ export interface ProjectedGrowthPoint {
   regularSavings: number;
   boostedWithSurplus: number;
   compoundPortfolio: number;
+}
+
+export interface ProjectedDebtPoint {
+  month: number;
+  label: string;
+  remainingPrincipal: number;
+  cumulativeInterestPaid: number;
+  monthlyPayment: number;
+}
+
+export interface ProjectedInvestedPoint {
+  month: number;
+  label: string;
+  startingBalance: number;
+  contributions: number;
+  interestEarned: number;
+  totalInvestedValue: number;
+}
+
+export interface ProjectedSavingsPoint {
+  month: number;
+  label: string;
+  emergencyTarget3Mo: number;
+  emergencyTarget6Mo: number;
+  projectedSavingsTotal: number;
+  interestYieldEarned: number;
 }
 
 export class MoneyManagerPlugin {
@@ -106,13 +140,14 @@ export class MoneyManagerPlugin {
   ): BudgetAnalysisResult {
     const cycle = this.calculateCycleDates(profile.salaryCycleDay, targetDate);
 
-    // 1. Obligations & Fixed Necessities
+    // 1. Obligations & Fixed Necessities (including Family Contribution)
     const totalFixedObligations =
       (profile.foodMonthly || 0) +
       (profile.travelMonthly || 0) +
       (profile.healthMonthly || 0) +
       (profile.housingMonthly || 0) +
-      (profile.loanClearanceMonthly || 0);
+      (profile.loanClearanceMonthly || 0) +
+      (profile.familyContributionMonthly || 0);
 
     // 2. Growth & Planned Investments
     const totalPlannedInvestments =
@@ -134,19 +169,37 @@ export class MoneyManagerPlugin {
     const wantsRatio = Math.round((totalFreeMoney / salary) * 100);
     const savingsRatio = Math.round((totalPlannedInvestments / salary) * 100);
 
-    // 6. Compute Budget Health Score (0-100)
+    // 6. Net Worth & Balance Sheet Metrics
+    const totalAssets =
+      (profile.currentBalance || 0) +
+      (profile.currentSaved || 0) +
+      (profile.currentInvested || 0);
+    const totalDebt = profile.currentDebt || 0;
+    const netWorth = totalAssets - totalDebt;
+
+    // 7. Debt Payoff Timeline quick estimation
+    const debtCalc = this.calculateDebtFreeTimeline(profile);
+    const debtFreeMonths = debtCalc.debtFreeMonths;
+
+    // 8. Compute Budget Health Score (0-100)
     let score = 100;
     if (needsRatio > 50) score -= (needsRatio - 50) * 1.5;
     if (wantsRatio > 35) score -= (wantsRatio - 35) * 1.2;
     if (savingsRatio < 20) score -= (20 - savingsRatio) * 2;
     if (totalFixedObligations + totalPlannedInvestments > salary) score -= 40;
+    if (totalDebt > salary * 6) score -= 15;
     const budgetHealthScore = Math.max(10, Math.min(100, Math.round(score)));
 
-    // 7. Dynamic Recommendations
+    // 9. Dynamic Recommendations
     const recommendations: string[] = [];
     if (needsRatio > 50) {
       recommendations.push(
-        `Fixed obligations are ${needsRatio}% of your income. Look into trimming non-essential recurring subscriptions or housing/loan rates.`
+        `Fixed obligations are ${needsRatio}% of your income (including ${profile.currency}${profile.familyContributionMonthly || 0} family support). Look into optimizing discretionary spending or fixed bills.`
+      );
+    }
+    if (totalDebt > 0 && debtCalc.isPayoffPossible) {
+      recommendations.push(
+        `At current monthly debt clearance of ${profile.currency}${profile.loanClearanceMonthly}/mo, you will be 100% DEBT-FREE in ${debtFreeMonths} months (${debtCalc.debtFreeDate}).`
       );
     }
     if (savingsRatio < 20) {
@@ -178,6 +231,10 @@ export class MoneyManagerPlugin {
       needsRatio,
       wantsRatio,
       savingsRatio,
+      netWorth,
+      totalAssets,
+      totalDebt,
+      debtFreeMonths,
       recommendations,
     };
   }
@@ -212,7 +269,7 @@ export class MoneyManagerPlugin {
   }
 
   /**
-   * Generates projected wealth growth curves with compound interest
+   * Generates projected wealth growth curves with compound interest (Legacy + Full Support)
    */
   public static calculateProjectedGrowth(
     profile: BudgetProfile,
@@ -220,6 +277,7 @@ export class MoneyManagerPlugin {
     monthsHorizon: number = 36,
     annualReturnRatePercent: number = 10
   ): ProjectedGrowthPoint[] {
+    const initialInvested = profile.currentInvested || 0;
     const monthlyBaseSavings = (profile.investingMonthly || 0) + (profile.savingsMonthly || 0);
     const monthlySurplusBonus = averageDailySurplus * 30;
     const monthlyTotalSavings = monthlyBaseSavings + monthlySurplusBonus;
@@ -227,15 +285,15 @@ export class MoneyManagerPlugin {
     const r = (annualReturnRatePercent || 10) / 100 / 12; // Monthly interest rate
     const points: ProjectedGrowthPoint[] = [];
 
-    let currentCompoundValue = 0;
+    let currentCompoundValue = initialInvested;
 
     for (let m = 1; m <= monthsHorizon; m++) {
-      const regularSavings = Math.round(monthlyBaseSavings * m);
-      const boostedWithSurplus = Math.round(monthlyTotalSavings * m);
+      const regularSavings = Math.round(initialInvested + monthlyBaseSavings * m);
+      const boostedWithSurplus = Math.round(initialInvested + monthlyTotalSavings * m);
 
-      // Future value of periodic annuity: FV = P * [((1 + r)^n - 1) / r]
+      // Month-by-month compounding with monthly additions
       if (r > 0) {
-        currentCompoundValue = Math.round(monthlyTotalSavings * ((Math.pow(1 + r, m) - 1) / r));
+        currentCompoundValue = Math.round((currentCompoundValue + monthlyTotalSavings) * (1 + r));
       } else {
         currentCompoundValue = boostedWithSurplus;
       }
@@ -257,6 +315,218 @@ export class MoneyManagerPlugin {
           regularSavings,
           boostedWithSurplus,
           compoundPortfolio: currentCompoundValue,
+        });
+      }
+    }
+
+    return points;
+  }
+
+  /**
+   * Generates exact debt-free amortization timeline with interest calculation
+   */
+  public static calculateDebtFreeTimeline(
+    profile: BudgetProfile,
+    extraMonthlyPayment: number = 0,
+    maxMonths: number = 240
+  ): {
+    debtFreeMonths: number;
+    debtFreeDate: string;
+    totalInterestPaid: number;
+    totalPaid: number;
+    monthlyPayment: number;
+    isPayoffPossible: boolean;
+    points: ProjectedDebtPoint[];
+  } {
+    let balance = Math.max(0, profile.currentDebt || 0);
+    const annualRate = Math.max(0, profile.debtInterestRate || 12);
+    const monthlyRate = annualRate / 100 / 12;
+    const payment = Math.max(0, (profile.loanClearanceMonthly || 0) + extraMonthlyPayment);
+
+    const points: ProjectedDebtPoint[] = [];
+    points.push({
+      month: 0,
+      label: 'Now',
+      remainingPrincipal: Math.round(balance),
+      cumulativeInterestPaid: 0,
+      monthlyPayment: payment,
+    });
+
+    if (balance === 0) {
+      return {
+        debtFreeMonths: 0,
+        debtFreeDate: 'Already Debt Free',
+        totalInterestPaid: 0,
+        totalPaid: 0,
+        monthlyPayment: payment,
+        isPayoffPossible: true,
+        points,
+      };
+    }
+
+    let cumulativeInterest = 0;
+    let months = 0;
+    let isPossible = true;
+
+    // Minimum monthly interest
+    const initialInterest = balance * monthlyRate;
+    if (payment <= initialInterest && monthlyRate > 0) {
+      isPossible = false;
+    }
+
+    while (balance > 0 && months < maxMonths && isPossible) {
+      months++;
+      const monthlyInterest = balance * monthlyRate;
+      cumulativeInterest += monthlyInterest;
+      const principalPaid = Math.min(balance, payment - monthlyInterest);
+      balance = Math.max(0, balance - principalPaid);
+
+      if (months <= 6 || months % 3 === 0 || balance === 0 || months === maxMonths) {
+        let label = `Month ${months}`;
+        if (months === 1) label = '1 Mo';
+        else if (months === 6) label = '6 Mo';
+        else if (months === 12) label = '1 Yr';
+        else if (months === 24) label = '2 Yrs';
+        else if (months === 36) label = '3 Yrs';
+        else if (months === 60) label = '5 Yrs';
+
+        points.push({
+          month: months,
+          label,
+          remainingPrincipal: Math.round(balance),
+          cumulativeInterestPaid: Math.round(cumulativeInterest),
+          monthlyPayment: payment,
+        });
+      }
+    }
+
+    const today = new Date();
+    const targetPayoffDate = new Date(today.getFullYear(), today.getMonth() + months, 1);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const debtFreeDate = `${monthNames[targetPayoffDate.getMonth()]} ${targetPayoffDate.getFullYear()}`;
+
+    return {
+      debtFreeMonths: months,
+      debtFreeDate,
+      totalInterestPaid: Math.round(cumulativeInterest),
+      totalPaid: Math.round((profile.currentDebt || 0) + cumulativeInterest),
+      monthlyPayment: payment,
+      isPayoffPossible: isPossible,
+      points,
+    };
+  }
+
+  /**
+   * Generates detailed investment portfolio growth timeline with starting invested balance & CAGR
+   */
+  public static calculateInvestedTimeline(
+    profile: BudgetProfile,
+    horizonMonths: number = 60,
+    annualReturnRatePercent: number = 10
+  ): ProjectedInvestedPoint[] {
+    const startingBalance = Math.max(0, profile.currentInvested || 0);
+    const monthlyContribution = Math.max(0, profile.investingMonthly || 0);
+    const r = Math.max(0, annualReturnRatePercent) / 100 / 12;
+
+    const points: ProjectedInvestedPoint[] = [];
+    let portfolioValue = startingBalance;
+    let totalContributed = startingBalance;
+
+    points.push({
+      month: 0,
+      label: 'Now',
+      startingBalance,
+      contributions: totalContributed,
+      interestEarned: 0,
+      totalInvestedValue: Math.round(portfolioValue),
+    });
+
+    for (let m = 1; m <= horizonMonths; m++) {
+      totalContributed += monthlyContribution;
+      portfolioValue = (portfolioValue + monthlyContribution) * (1 + r);
+      const interestEarned = Math.max(0, portfolioValue - totalContributed);
+
+      if (m <= 6 || m % 6 === 0 || m === horizonMonths) {
+        let label = `Mo ${m}`;
+        if (m === 12) label = '1 Year';
+        else if (m === 24) label = '2 Years';
+        else if (m === 36) label = '3 Years';
+        else if (m === 60) label = '5 Years';
+        else if (m === 120) label = '10 Years';
+
+        points.push({
+          month: m,
+          label,
+          startingBalance,
+          contributions: Math.round(totalContributed),
+          interestEarned: Math.round(interestEarned),
+          totalInvestedValue: Math.round(portfolioValue),
+        });
+      }
+    }
+
+    return points;
+  }
+
+  /**
+   * Generates savings & emergency buffer timeline over time with yield rates & milestones
+   */
+  public static calculateSavingsTimeline(
+    profile: BudgetProfile,
+    averageDailySurplus: number = 0,
+    horizonMonths: number = 36,
+    annualSavingsRatePercent: number = 4
+  ): ProjectedSavingsPoint[] {
+    const startingSavings = Math.max(0, profile.currentSaved || 0);
+    const monthlySavingsBase = Math.max(0, profile.savingsMonthly || 0);
+    const monthlySurplusSweep = Math.max(0, averageDailySurplus * 30);
+    const monthlyTotalSavings = monthlySavingsBase + monthlySurplusSweep;
+    const r = Math.max(0, annualSavingsRatePercent) / 100 / 12;
+
+    // Monthly fixed obligations for emergency targets
+    const monthlyNeeds =
+      (profile.foodMonthly || 0) +
+      (profile.travelMonthly || 0) +
+      (profile.healthMonthly || 0) +
+      (profile.housingMonthly || 0) +
+      (profile.loanClearanceMonthly || 0) +
+      (profile.familyContributionMonthly || 0);
+
+    const target3Mo = monthlyNeeds * 3;
+    const target6Mo = monthlyNeeds * 6;
+
+    const points: ProjectedSavingsPoint[] = [];
+    let currentSavings = startingSavings;
+    let cumulativeYield = 0;
+
+    points.push({
+      month: 0,
+      label: 'Now',
+      emergencyTarget3Mo: target3Mo,
+      emergencyTarget6Mo: target6Mo,
+      projectedSavingsTotal: Math.round(currentSavings),
+      interestYieldEarned: 0,
+    });
+
+    for (let m = 1; m <= horizonMonths; m++) {
+      const monthYield = currentSavings * r;
+      cumulativeYield += monthYield;
+      currentSavings = currentSavings + monthlyTotalSavings + monthYield;
+
+      if (m <= 6 || m % 3 === 0 || m === horizonMonths) {
+        let label = `Mo ${m}`;
+        if (m === 6) label = '6 Mo';
+        else if (m === 12) label = '1 Year';
+        else if (m === 24) label = '2 Years';
+        else if (m === 36) label = '3 Years';
+
+        points.push({
+          month: m,
+          label,
+          emergencyTarget3Mo: target3Mo,
+          emergencyTarget6Mo: target6Mo,
+          projectedSavingsTotal: Math.round(currentSavings),
+          interestYieldEarned: Math.round(cumulativeYield),
         });
       }
     }
@@ -314,6 +584,12 @@ export class MoneyManagerPlugin {
           action: 'BUDGET_TELEMETRY_UPDATE',
           currency: profile.currency,
           monthlySalary: profile.monthlySalary,
+          currentBalance: profile.currentBalance,
+          currentSaved: profile.currentSaved,
+          currentInvested: profile.currentInvested,
+          currentDebt: profile.currentDebt,
+          familyContributionMonthly: profile.familyContributionMonthly,
+          netWorth: analysis.netWorth,
           safeToSpendDaily: analysis.safeToSpendDaily,
           safeToSpendWeekly: analysis.safeToSpendWeekly,
           totalFixedObligations: analysis.totalFixedObligations,

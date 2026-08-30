@@ -42,11 +42,11 @@ export interface DownloadProgress {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.3',
-  buildNumber: '4',
+  version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.4',
+  buildNumber: '5',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
-  gitCommit: typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : '9dbc067',
-  releaseNotes: 'PAIOS v4.5.3: Money Manager & Budget Analyzer Plugin and Verified In-App Auto-Updater',
+  gitCommit: typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'be03ac7',
+  releaseNotes: 'PAIOS v4.5.4: Money Manager Balance Sheet, Family Contribution & Interactive Debt/Invested Timelines',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
@@ -205,7 +205,7 @@ export class UpdateService {
     }
 
     // Compose final remote manifest
-    const targetVersion = fetchedManifest?.version || current.version || '4.5.3';
+    const targetVersion = fetchedManifest?.version || current.version || '4.5.4';
     const targetCommit =
       latestCommitInfo?.shortSha ||
       fetchedManifest?.gitCommit ||
@@ -213,7 +213,7 @@ export class UpdateService {
 
     const manifest: VersionManifest = {
       version: targetVersion,
-      buildNumber: fetchedManifest?.buildNumber || 4,
+      buildNumber: fetchedManifest?.buildNumber || 5,
       buildTimestamp:
         latestCommitInfo?.date
           ? new Date(latestCommitInfo.date).getTime()
@@ -225,7 +225,7 @@ export class UpdateService {
       releaseNotes:
         latestCommitInfo?.title ||
         fetchedManifest?.releaseNotes ||
-        'PAIOS v4.5.3: Money Manager & Budget Analyzer Plugin and Verified In-App Auto-Updater',
+        'PAIOS v4.5.4: Money Manager Balance Sheet, Family Contribution & Interactive Debt/Invested Timelines',
       platforms: {
         windows: {
           url:

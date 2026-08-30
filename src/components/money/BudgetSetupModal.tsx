@@ -17,6 +17,8 @@ import {
   BookOpen,
   PiggyBank,
   Wallet,
+  Users,
+  Percent,
 } from 'lucide-react';
 import { BudgetProfile } from '../../types';
 
@@ -37,12 +39,23 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
   const [monthlySalary, setMonthlySalary] = useState(initialProfile.monthlySalary || 5000);
   const [salaryCycleDay, setSalaryCycleDay] = useState(initialProfile.salaryCycleDay || 1);
 
-  // Necessities
+  // Balance Sheet & Current Wealth Position
+  const [currentBalance, setCurrentBalance] = useState(initialProfile.currentBalance ?? 3500);
+  const [currentSaved, setCurrentSaved] = useState(initialProfile.currentSaved ?? 8000);
+  const [currentInvested, setCurrentInvested] = useState(initialProfile.currentInvested ?? 15000);
+  const [currentDebt, setCurrentDebt] = useState(initialProfile.currentDebt ?? 12000);
+  const [debtInterestRate, setDebtInterestRate] = useState(initialProfile.debtInterestRate ?? 12);
+  const [savingsInterestRate, setSavingsInterestRate] = useState(initialProfile.savingsInterestRate ?? 4);
+
+  // Necessities & Obligations
   const [foodMonthly, setFoodMonthly] = useState(initialProfile.foodMonthly || 800);
   const [travelMonthly, setTravelMonthly] = useState(initialProfile.travelMonthly || 300);
   const [healthMonthly, setHealthMonthly] = useState(initialProfile.healthMonthly || 250);
   const [housingMonthly, setHousingMonthly] = useState(initialProfile.housingMonthly || 1400);
   const [loanClearanceMonthly, setLoanClearanceMonthly] = useState(initialProfile.loanClearanceMonthly || 400);
+  const [familyContributionMonthly, setFamilyContributionMonthly] = useState(
+    initialProfile.familyContributionMonthly ?? 400
+  );
 
   // Growth & Planned
   const [learningMonthly, setLearningMonthly] = useState(initialProfile.learningMonthly || 200);
@@ -56,10 +69,18 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
 
   if (!isOpen) return null;
 
-  const totalFixed = foodMonthly + travelMonthly + healthMonthly + housingMonthly + loanClearanceMonthly;
-  const totalGrowth = learningMonthly + investingMonthly + savingsMonthly;
-  const freeCapital = Math.max(0, monthlySalary - (totalFixed + totalGrowth));
+  const totalFixed =
+    Number(foodMonthly) +
+    Number(travelMonthly) +
+    Number(healthMonthly) +
+    Number(housingMonthly) +
+    Number(loanClearanceMonthly) +
+    Number(familyContributionMonthly);
+
+  const totalGrowth = Number(learningMonthly) + Number(investingMonthly) + Number(savingsMonthly);
+  const freeCapital = Math.max(0, Number(monthlySalary) - (totalFixed + totalGrowth));
   const estimatedDailySafe = Math.round((freeCapital / 30) * 100) / 100;
+  const netWorth = (Number(currentBalance) + Number(currentSaved) + Number(currentInvested)) - Number(currentDebt);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,11 +90,21 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
       currency,
       monthlySalary: Math.max(0, Number(monthlySalary)),
       salaryCycleDay: Math.max(1, Math.min(31, Number(salaryCycleDay))),
+      // Balance Sheet
+      currentBalance: Math.max(0, Number(currentBalance)),
+      currentSaved: Math.max(0, Number(currentSaved)),
+      currentInvested: Math.max(0, Number(currentInvested)),
+      currentDebt: Math.max(0, Number(currentDebt)),
+      debtInterestRate: Math.max(0, Number(debtInterestRate)),
+      savingsInterestRate: Math.max(0, Number(savingsInterestRate)),
+      // Obligations
       foodMonthly: Math.max(0, Number(foodMonthly)),
       travelMonthly: Math.max(0, Number(travelMonthly)),
       healthMonthly: Math.max(0, Number(healthMonthly)),
       housingMonthly: Math.max(0, Number(housingMonthly)),
       loanClearanceMonthly: Math.max(0, Number(loanClearanceMonthly)),
+      familyContributionMonthly: Math.max(0, Number(familyContributionMonthly)),
+      // Growth
       learningMonthly: Math.max(0, Number(learningMonthly)),
       investingMonthly: Math.max(0, Number(investingMonthly)),
       savingsMonthly: Math.max(0, Number(savingsMonthly)),
@@ -97,14 +128,14 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-heading font-extrabold text-lg text-white">
-                  Budget Planner & Financial Setup
+                  Budget Planner & Wealth Setup
                 </h3>
                 <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-600/50 px-2 py-0.5 rounded-full">
                   Step {activeStep} of 3
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Configure your monthly salary, fixed necessities, and daily safe-to-spend target
+                Configure your monthly cashflow, balance sheet, family support, and growth targets
               </p>
             </div>
           </div>
@@ -125,7 +156,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
               activeStep === 1 ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            1. Income & Cycle
+            1. Income & Balances
           </button>
           <button
             onClick={() => setActiveStep(2)}
@@ -133,7 +164,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
               activeStep === 2 ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            2. Fixed Necessities
+            2. Fixed Obligations
           </button>
           <button
             onClick={() => setActiveStep(3)}
@@ -141,12 +172,12 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
               activeStep === 3 ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            3. Wealth & Review
+            3. Growth & Wealth
           </button>
         </div>
 
         <form onSubmit={handleSave} className="space-y-4">
-          {/* STEP 1: Income & Salary Cycle */}
+          {/* STEP 1: Income, Salary Cycle & Balance Sheet */}
           {activeStep === 1 && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -209,17 +240,86 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                 </div>
               </div>
 
-              {/* Step 1 Quick Summary Preview */}
-              <div className="p-4 bg-slate-950/80 rounded-2xl border border-slate-800 flex items-center justify-between text-xs font-mono">
-                <span className="text-slate-400">Monthly Inflow:</span>
-                <strong className="text-emerald-400 font-bold text-base">
-                  {currency}{Number(monthlySalary).toLocaleString()}
+              {/* Current Balances Section */}
+              <div className="pt-2 border-t border-slate-800">
+                <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <Wallet className="w-4 h-4 text-cyan-400" />
+                  <span>Current Balances & Wealth Positions</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Current Checking/Liquid Balance */}
+                  <div>
+                    <label className="text-xs text-slate-300 block mb-1">Current Checking / Liquid Cash</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-slate-500 font-mono text-xs">{currency}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={currentBalance}
+                        onChange={(e) => setCurrentBalance(Number(e.target.value))}
+                        className="w-full pl-7 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Current Emergency Savings */}
+                  <div>
+                    <label className="text-xs text-slate-300 block mb-1">Current Saved Amount (Emergency Fund)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-slate-500 font-mono text-xs">{currency}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={currentSaved}
+                        onChange={(e) => setCurrentSaved(Number(e.target.value))}
+                        className="w-full pl-7 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Current Total Invested */}
+                  <div>
+                    <label className="text-xs text-slate-300 block mb-1">Current Invested Portfolio</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-slate-500 font-mono text-xs">{currency}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={currentInvested}
+                        onChange={(e) => setCurrentInvested(Number(e.target.value))}
+                        className="w-full pl-7 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Current Outstanding Debt */}
+                  <div>
+                    <label className="text-xs text-slate-300 block mb-1">Current Total Debt (Loans, Cards)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-slate-500 font-mono text-xs">{currency}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={currentDebt}
+                        onChange={(e) => setCurrentDebt(Number(e.target.value))}
+                        className="w-full pl-7 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Net Worth Preview */}
+              <div className="p-3 bg-slate-950/90 rounded-2xl border border-slate-800 flex items-center justify-between text-xs font-mono">
+                <span className="text-slate-400">Calculated Net Worth:</span>
+                <strong className={`text-sm font-bold ${netWorth >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {currency}{netWorth.toLocaleString()}
                 </strong>
               </div>
             </div>
           )}
 
-          {/* STEP 2: Fixed Obligations & Necessities */}
+          {/* STEP 2: Fixed Obligations & Necessities (Including Family Contribution) */}
           {activeStep === 2 && (
             <div className="space-y-3 animate-fade-in">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -284,10 +384,10 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                 </div>
 
                 {/* Loan Clearance / EMIs */}
-                <div className="sm:col-span-2">
+                <div>
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
                     <CreditCard className="w-3.5 h-3.5 text-orange-400" />
-                    Loan Clearance / EMI / Debt Obligations
+                    Monthly Loan Clearance / EMI
                   </label>
                   <input
                     type="number"
@@ -296,6 +396,42 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                     onChange={(e) => setLoanClearanceMonthly(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono"
                   />
+                </div>
+
+                {/* Family Contribution / Support */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
+                    <Users className="w-3.5 h-3.5 text-pink-400" />
+                    Family Contribution & Support
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={familyContributionMonthly}
+                    onChange={(e) => setFamilyContributionMonthly(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono"
+                    placeholder="Support sent to family/parents"
+                  />
+                </div>
+              </div>
+
+              {/* Debt Interest Rate Setting */}
+              <div className="p-3 bg-slate-950/70 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                <span className="text-slate-400 flex items-center gap-1.5">
+                  <Percent className="w-3.5 h-3.5 text-orange-400" />
+                  Debt Interest Rate (% p.a.):
+                </span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    step="0.1"
+                    value={debtInterestRate}
+                    onChange={(e) => setDebtInterestRate(Number(e.target.value))}
+                    className="w-20 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-orange-300 text-center"
+                  />
+                  <span className="text-slate-500 font-mono">%</span>
                 </div>
               </div>
 
@@ -316,7 +452,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                 <div>
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
                     <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                    Investing (Mutual Funds, SIP, Stocks)
+                    Monthly Investing (SIP, Stocks, Mutual Funds)
                   </label>
                   <input
                     type="number"
@@ -331,7 +467,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                 <div>
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
                     <PiggyBank className="w-3.5 h-3.5 text-teal-400" />
-                    Savings / Emergency Buffer Target
+                    Monthly Savings / Emergency Buffer
                   </label>
                   <input
                     type="number"
@@ -357,11 +493,11 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                   />
                 </div>
 
-                {/* Compound Growth Expected Return */}
+                {/* Expected Return Rate */}
                 <div>
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
                     <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    Expected Return Rate (% / Year)
+                    Expected Investment CAGR (% / Year)
                   </label>
                   <input
                     type="number"

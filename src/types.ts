@@ -278,6 +278,7 @@ export type BudgetCategory =
   | 'Health'
   | 'Housing'
   | 'LoanClearance'
+  | 'FamilyContribution'
   | 'Learning'
   | 'Investing'
   | 'Savings'
@@ -289,12 +290,20 @@ export interface BudgetProfile {
   monthlySalary: number;
   currency: string;
   salaryCycleDay: number; // 1 to 31 (day of month salary arrives)
+  // Balance Sheet & Current Wealth Position
+  currentBalance?: number; // Checking / liquid cash balance
+  currentSaved?: number; // Current emergency / liquid savings
+  currentDebt?: number; // Outstanding debt / loans / credit cards
+  debtInterestRate?: number; // Annual debt interest rate % p.a.
+  currentInvested?: number; // Current invested portfolio value
+  savingsInterestRate?: number; // Annual savings yield rate % p.a.
   // Necessities & Fixed Obligations
   foodMonthly: number;
   travelMonthly: number;
   healthMonthly: number;
   housingMonthly: number;
   loanClearanceMonthly: number;
+  familyContributionMonthly?: number; // Family support / parents contribution
   // Growth & Planned Expenses
   learningMonthly: number;
   investingMonthly: number;
@@ -338,6 +347,10 @@ export interface BudgetAnalysisResult {
   needsRatio: number;
   wantsRatio: number;
   savingsRatio: number;
+  netWorth?: number;
+  totalAssets?: number;
+  totalDebt?: number;
+  debtFreeMonths?: number;
   recommendations: string[];
 }
 

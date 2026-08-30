@@ -274,7 +274,7 @@ export const SoftwareUpdateCard: React.FC = () => {
           <div className="flex items-center justify-between text-xs text-slate-300">
             <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-              Downloading v{serverManifest?.version || '4.5.3'} ({downloadProgress.percent}%)
+              Downloading v{serverManifest?.version || '4.5.4'} ({downloadProgress.percent}%)
             </span>
             <span className="font-mono text-[11px] text-slate-400">
               {formatBytes(downloadProgress.transferredBytes)} / {formatBytes(downloadProgress.totalBytes)}

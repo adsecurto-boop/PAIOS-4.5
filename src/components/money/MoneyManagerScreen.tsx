@@ -21,6 +21,9 @@ import {
   Clock,
   ArrowUpRight,
   Filter,
+  CreditCard,
+  Users,
+  Percent,
 } from 'lucide-react';
 import {
   BudgetProfile,
@@ -129,28 +132,32 @@ export const MoneyManagerScreen: React.FC = () => {
     setAiAdvice(null);
 
     const prompt = `You are the PAIOS Master Financial Advisor & Wealth Strategist.
-Analyze the user's monthly budget and spending parameters:
-- Monthly Inflow / Salary: ${profile.currency}${profile.monthlySalary}
+Analyze the user's comprehensive wealth and cashflow profile:
+- Monthly Income: ${profile.currency}${profile.monthlySalary}
+- Net Worth: ${profile.currency}${analysis.netWorth?.toLocaleString()}
+- Total Assets: ${profile.currency}${analysis.totalAssets?.toLocaleString()} (Checking: ${profile.currency}${profile.currentBalance || 0}, Savings: ${profile.currency}${profile.currentSaved || 0}, Invested: ${profile.currency}${profile.currentInvested || 0})
+- Outstanding Debt: ${profile.currency}${profile.currentDebt || 0} (Interest Rate: ${profile.debtInterestRate || 12}% p.a.)
 - Fixed Obligations (Needs): ${profile.currency}${analysis.totalFixedObligations} (${analysis.needsRatio}%)
-  - Food: ${profile.currency}${profile.foodMonthly}
-  - Travel: ${profile.currency}${profile.travelMonthly}
   - Housing/Rent: ${profile.currency}${profile.housingMonthly}
+  - Food & Groceries: ${profile.currency}${profile.foodMonthly}
+  - Travel: ${profile.currency}${profile.travelMonthly}
   - Health: ${profile.currency}${profile.healthMonthly}
-  - Debt/Loans: ${profile.currency}${profile.loanClearanceMonthly}
+  - Debt/Loan Clearance: ${profile.currency}${profile.loanClearanceMonthly}
+  - Family Contribution / Support: ${profile.currency}${profile.familyContributionMonthly || 0}
 - Planned Investments & Savings: ${profile.currency}${analysis.totalPlannedInvestments} (${analysis.savingsRatio}%)
 - Discretionary Free Capital: ${profile.currency}${analysis.totalFreeMoney} (${analysis.wantsRatio}%)
 - Daily Safe-to-Spend: ${profile.currency}${analysis.safeToSpendDaily}
 - Budget Health Score: ${analysis.budgetHealthScore}/100
 - Days Remaining in Current Cycle: ${analysis.daysRemainingInCycle} days
 
-Provide a concise, 3-point actionable strategic optimization plan to maximize daily savings, reduce obligations, and accelerate 5-year wealth growth. Format with bullet points.`;
+Provide a concise, 4-point actionable strategic optimization plan to eliminate debt, optimize family obligations, maximize daily savings, and accelerate 5-year investment growth. Format with clean bullet points.`;
 
     try {
       const response = await sendClientGeminiChat({ userText: prompt });
       setAiAdvice(response.text);
     } catch (err) {
       setAiAdvice(
-        `1. Maintain your daily spend below ${profile.currency}${analysis.safeToSpendDaily.toFixed(2)} to ensure end-of-month surplus.\n2. Automate a ${profile.currency}${profile.investingMonthly} monthly SIP into diversified index funds.\n3. Sweep any daily unspent surplus every night to compound extra returns.`
+        `1. Maintain your daily spend below ${profile.currency}${analysis.safeToSpendDaily.toFixed(2)} to ensure end-of-month surplus.\n2. Prioritize high-interest debt clearance (${profile.debtInterestRate || 12}%) to save on interest costs.\n3. Automate your monthly ${profile.currency}${profile.investingMonthly} SIP into diversified index funds.\n4. Sweep any daily unspent surplus every night to compound extra returns.`
       );
     } finally {
       setIsAnalyzingWithAi(false);
@@ -178,11 +185,11 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
                 Money Manager & Budget Analyzer
               </h2>
               <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-600/50 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-amber-300" /> Pro Engine
+                <Sparkles className="w-3 h-3 text-amber-300" /> Pro Wealth Engine
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-1">
-              Real-time daily safe-to-spend tracking, obligation management, and compound wealth projections
+              Real-time daily safe-to-spend tracking, obligation management, and predictive wealth projections
             </p>
           </div>
         </div>
@@ -201,8 +208,70 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
             className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition-all flex items-center gap-1.5"
           >
             <Sliders className="w-4 h-4 text-cyan-400" />
-            <span>Edit Plan</span>
+            <span>Edit Wealth Plan</span>
           </button>
+        </div>
+      </div>
+
+      {/* Balance Sheet & Net Worth Overview Strip */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-cyan-400" />
+            <h3 className="font-heading font-bold text-sm text-white uppercase tracking-wider">
+              Current Balance Sheet & Wealth Position
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-mono">Net Worth:</span>
+            <strong
+              className={`text-sm font-extrabold font-mono px-2.5 py-0.5 rounded-lg border ${
+                (analysis.netWorth || 0) >= 0
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-700/50'
+                  : 'bg-rose-950 text-rose-300 border-rose-700/50'
+              }`}
+            >
+              {profile.currency}{(analysis.netWorth || 0).toLocaleString()}
+            </strong>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* 1. Checking / Cash */}
+          <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800/80">
+            <span className="text-[10px] text-slate-400 font-mono block">Liquid / Checking</span>
+            <strong className="text-base font-extrabold text-white font-mono">
+              {profile.currency}{(profile.currentBalance || 0).toLocaleString()}
+            </strong>
+            <span className="text-[10px] text-slate-500 block mt-0.5">Available Cash</span>
+          </div>
+
+          {/* 2. Emergency Savings */}
+          <div className="bg-slate-950 p-3 rounded-2xl border border-teal-500/20">
+            <span className="text-[10px] text-teal-400 font-mono block">Emergency Savings</span>
+            <strong className="text-base font-extrabold text-teal-300 font-mono">
+              {profile.currency}{(profile.currentSaved || 0).toLocaleString()}
+            </strong>
+            <span className="text-[10px] text-teal-500/80 block mt-0.5">Yield: {profile.savingsInterestRate || 4}% p.a.</span>
+          </div>
+
+          {/* 3. Invested Assets */}
+          <div className="bg-slate-950 p-3 rounded-2xl border border-emerald-500/20">
+            <span className="text-[10px] text-emerald-400 font-mono block">Invested Portfolio</span>
+            <strong className="text-base font-extrabold text-emerald-300 font-mono">
+              {profile.currency}{(profile.currentInvested || 0).toLocaleString()}
+            </strong>
+            <span className="text-[10px] text-emerald-500/80 block mt-0.5">CAGR: {profile.expectedAnnualReturnRate || 10}% p.a.</span>
+          </div>
+
+          {/* 4. Total Debt */}
+          <div className="bg-slate-950 p-3 rounded-2xl border border-orange-500/20">
+            <span className="text-[10px] text-orange-400 font-mono block">Outstanding Debt</span>
+            <strong className="text-base font-extrabold text-rose-400 font-mono">
+              {profile.currency}{(profile.currentDebt || 0).toLocaleString()}
+            </strong>
+            <span className="text-[10px] text-orange-400/80 block mt-0.5">Rate: {profile.debtInterestRate || 12}% p.a.</span>
+          </div>
         </div>
       </div>
 
@@ -331,7 +400,7 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Proportion of Needs, Discretionary Wants, and Wealth Investments
+                Proportion of Needs (including Family Support), Discretionary Wants, and Wealth Investments
               </p>
             </div>
           </div>
@@ -361,7 +430,7 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
               />
             </div>
             <span className="text-[10px] font-mono text-slate-500 block">
-              {profile.currency}{analysis.totalFixedObligations.toLocaleString()} (Target &le; 50%)
+              {profile.currency}{analysis.totalFixedObligations.toLocaleString()} (Incl. {profile.currency}{profile.familyContributionMonthly || 0} family support)
             </span>
           </div>
 
@@ -414,7 +483,7 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
         )}
       </div>
 
-      {/* Projected Wealth & Compound Growth Interactive Chart */}
+      {/* Predictive Wealth & 3 Interactive Projections (Invested, Debt-Free, Savings) */}
       <ProjectedGrowthChart
         profile={profile}
         averageDailySurplus={avgSurplus}
@@ -437,7 +506,7 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
 
           {/* Filter Categories */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-mono">
-            {['ALL', 'Food', 'Travel', 'Health', 'Housing', 'Learning', 'Entertainment'].map((cat) => (
+            {['ALL', 'Food', 'Travel', 'Health', 'Housing', 'FamilyContribution', 'LoanClearance', 'Learning', 'Entertainment'].map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedFilterCategory(cat)}
@@ -447,7 +516,7 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
                     : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
                 }`}
               >
-                {cat}
+                {cat === 'FamilyContribution' ? 'Family Support' : cat === 'LoanClearance' ? 'Loan / EMI' : cat}
               </button>
             ))}
           </div>
@@ -479,7 +548,7 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
                     <h4 className="text-xs font-bold text-white">{tx.title}</h4>
                     <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400 mt-0.5">
                       <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-indigo-300">
-                        {tx.category}
+                        {tx.category === 'FamilyContribution' ? 'Family Support' : tx.category}
                       </span>
                       <span>{tx.dateString}</span>
                     </div>
@@ -537,7 +606,7 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
                   required
                   value={newExpenseTitle}
                   onChange={(e) => setNewExpenseTitle(e.target.value)}
-                  placeholder="e.g. Lunch with colleagues, Metro fare"
+                  placeholder="e.g. Lunch with colleagues, Family transfer, Metro fare"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -571,6 +640,8 @@ Provide a concise, 3-point actionable strategic optimization plan to maximize da
                     <option value="Travel">Travel</option>
                     <option value="Health">Health</option>
                     <option value="Housing">Housing</option>
+                    <option value="FamilyContribution">Family Support</option>
+                    <option value="LoanClearance">Loan / EMI</option>
                     <option value="Learning">Learning</option>
                     <option value="Investing">Investing</option>
                     <option value="Entertainment">Entertainment</option>
