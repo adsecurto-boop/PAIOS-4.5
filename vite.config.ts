@@ -4,9 +4,12 @@ import tailwindcss from '@tailwindcss/vite';
 import { execSync } from 'child_process';
 import pkg from './package.json';
 
-let gitCommit = '7909b37';
+let gitCommit = process.env.GIT_COMMIT ? process.env.GIT_COMMIT.substring(0, 7) : '9dbc067';
 try {
-  gitCommit = execSync('git rev-parse --short HEAD').toString().trim();
+  const currentSha = execSync('git rev-parse --short HEAD').toString().trim();
+  if (currentSha) {
+    gitCommit = currentSha;
+  }
 } catch (e) {}
 
 export default defineConfig(({ command }) => ({

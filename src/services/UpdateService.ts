@@ -45,7 +45,7 @@ export const CURRENT_CLIENT_VERSION: VersionManifest = {
   version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.3',
   buildNumber: '4',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
-  gitCommit: typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'f000197',
+  gitCommit: typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : '9dbc067',
   releaseNotes: 'PAIOS v4.5.3: Money Manager & Budget Analyzer Plugin and Verified In-App Auto-Updater',
   platforms: {
     windows: {
@@ -462,9 +462,17 @@ export class UpdateService {
       try {
         const electron = (window as any).require ? (window as any).require('electron') : null;
         if (electron?.ipcRenderer) {
+          let bufferArray: number[] | undefined = undefined;
+          if (downloadedData instanceof Blob) {
+            const ab = await downloadedData.arrayBuffer();
+            bufferArray = Array.from(new Uint8Array(ab));
+          }
+
           await electron.ipcRenderer.invoke('paios:apply-update', {
             version: manifest.version,
+            gitCommit: manifest.gitCommit,
             filePath: typeof downloadedData === 'string' ? downloadedData : undefined,
+            fileBuffer: bufferArray,
           });
           return;
         }

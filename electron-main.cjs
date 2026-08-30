@@ -100,6 +100,27 @@ function createWindow() {
     const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
 
     if (fs.existsSync(userDistIndex) && isValidProductionDist(userDistDir)) {
+      // Check if bundled executable has a newer timestamp than the cached userData dist
+      let bundledIsNewer = false;
+      try {
+        if (fs.existsSync(bundledDistIndex)) {
+          const bundledStat = fs.statSync(bundledDistIndex);
+          const userStat = fs.statSync(userDistIndex);
+          if (bundledStat.mtimeMs > userStat.mtimeMs + 2000) {
+            bundledIsNewer = true;
+          }
+        }
+      } catch (e) {}
+
+      if (bundledIsNewer) {
+        console.log('[PAIOS Electron] Bundled app binary is newer than cached userData, loading fresh bundled assets.');
+        try {
+          fs.rmSync(userDistDir, { recursive: true, force: true });
+        } catch (e) {}
+        mainWindow.loadFile(bundledDistIndex);
+        return;
+      }
+
       console.log('[PAIOS Electron] Loading verified updated distribution from userData:', userDistIndex);
       mainWindow.loadFile(userDistIndex).catch((err) => {
         console.warn('Failed to load updated dist from userData, falling back to bundled:', err);
@@ -110,7 +131,9 @@ function createWindow() {
     } else {
       if (fs.existsSync(userDistDir) && !isValidProductionDist(userDistDir)) {
         console.warn('[PAIOS Electron] Found invalid/uncompiled dist in userData, purging and falling back to bundled assets.');
-        fs.rmSync(userDistDir, { recursive: true, force: true });
+        try {
+          fs.rmSync(userDistDir, { recursive: true, force: true });
+        } catch (e) {}
       }
       if (fs.existsSync(bundledDistIndex)) {
         mainWindow.loadFile(bundledDistIndex);
@@ -345,17 +368,39 @@ function findDistFolder(dirPath, maxDepth = 5) {
   return null;
 }
 
+// IPC Handler: Get userData Path
+ipcMain.handle('paios:get-user-data-path', async () => {
+  return app.getPath('userData');
+});
+
 // IPC Handler: Apply Windows Desktop Update
-ipcMain.handle('paios:apply-update', async (event, { version, filePath }) => {
+ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuffer, gitCommit }) => {
   const updatesDir = path.join(app.getPath('userData'), 'updates');
   const userDistDir = path.join(app.getPath('userData'), 'current_dist');
 
+  if (!fs.existsSync(updatesDir)) {
+    fs.mkdirSync(updatesDir, { recursive: true });
+  }
+
   let zipToApply = filePath;
+
+  // Handle direct fileBuffer payload from renderer
+  if (fileBuffer && (Array.isArray(fileBuffer) || Buffer.isBuffer(fileBuffer))) {
+    const rawBuffer = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer);
+    const targetZip = path.join(updatesDir, `PAIOS-Update-${version || 'latest'}-${Date.now()}.zip`);
+    fs.writeFileSync(targetZip, rawBuffer);
+    zipToApply = targetZip;
+  }
+
   if (!zipToApply || !fs.existsSync(zipToApply)) {
     if (fs.existsSync(updatesDir)) {
+      // Find the most recently modified zip file
       const files = fs.readdirSync(updatesDir).filter((f) => f.endsWith('.zip'));
       if (files.length > 0) {
-        zipToApply = path.join(updatesDir, files[files.length - 1]);
+        const sorted = files
+          .map((f) => ({ name: f, time: fs.statSync(path.join(updatesDir, f)).mtimeMs }))
+          .sort((a, b) => b.time - a.time);
+        zipToApply = path.join(updatesDir, sorted[0].name);
       }
     }
   }
@@ -382,6 +427,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath }) => {
 
         const activeManifest = {
           version: version || '4.5.3',
+          gitCommit: gitCommit || 'latest',
           appliedAt: Date.now(),
           sourcePackage: zipToApply,
         };

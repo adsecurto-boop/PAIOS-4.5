@@ -2,7 +2,7 @@
   "version": "4.5.3",
   "buildNumber": "4",
   "buildTimestamp": 1787490000000,
-  "gitCommit": "f000197",
+  "gitCommit": "9dbc067",
   "releaseNotes": "PAIOS v4.5.3: Money Manager & Budget Analyzer Plugin and Verified In-App Auto-Updater",
   "mandatory": false,
   "platforms": {
