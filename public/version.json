@@ -1,25 +1,25 @@
 {
-  "version": "4.5.2",
-  "buildNumber": "3",
-  "buildTimestamp": 1787480000000,
-  "gitCommit": "f4bb089",
-  "releaseNotes": "PAIOS v4.5.2: Money Manager & Budget Analyzer Plugin and Live Hot-Asset In-App Auto-Updater",
+  "version": "4.5.3",
+  "buildNumber": "4",
+  "buildTimestamp": 1787485000000,
+  "gitCommit": "f000197",
+  "releaseNotes": "PAIOS v4.5.3: Money Manager & Budget Analyzer Plugin and Verified In-App Auto-Updater",
   "mandatory": false,
   "platforms": {
     "windows": {
       "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
       "desktopZipUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip",
       "filename": "PAIOS-Desktop-Windows-x64.zip",
-      "version": "4.5.2"
+      "version": "4.5.3"
     },
     "android": {
       "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk",
       "debugUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk",
       "filename": "app-release.apk",
-      "version": "4.5.2"
+      "version": "4.5.3"
     },
     "web": {
-      "version": "4.5.2"
+      "version": "4.5.3"
     }
   }
 }

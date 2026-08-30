@@ -72,7 +72,7 @@ pipeline {
                 Compress-Archive -Path "dist/*" -DestinationPath "dist/PAIOS-Web-Dist.zip" -Force
                 $manifest = @"
 {
-  "version": "4.5.2",
+  "version": "4.5.3",
   "buildNumber": "$($env:BUILD_NUMBER)",
   "buildTimestamp": $([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()),
   "gitCommit": "$($env:GIT_COMMIT)",
@@ -84,13 +84,13 @@ pipeline {
       "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip",
       "webDistUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
       "filename": "PAIOS-Desktop-Windows-x64.zip",
-      "version": "4.5.2"
+      "version": "4.5.3"
     },
     "android": {
       "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk",
       "debugUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk",
       "filename": "app-release.apk",
-      "version": "4.5.2"
+      "version": "4.5.3"
     }
   }
 }
