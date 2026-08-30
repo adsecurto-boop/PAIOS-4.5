@@ -190,7 +190,7 @@ export const SoftwareUpdateCard: React.FC = () => {
           <div>
             <span className="text-[10px] font-mono text-slate-400 block">Installed Build Commit</span>
             <strong className="text-xs font-mono text-cyan-300 font-bold">
-              {CURRENT_CLIENT_VERSION.gitCommit}
+              {(typeof window !== 'undefined' ? localStorage.getItem('paios_active_git_commit') : null) || CURRENT_CLIENT_VERSION.gitCommit}
             </strong>
           </div>
         </div>

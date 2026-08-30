@@ -40,12 +40,30 @@ export interface DownloadProgress {
   error?: string;
 }
 
+const getStoredActiveCommit = (): string | null => {
+  if (typeof window !== 'undefined') {
+    try {
+      return localStorage.getItem('paios_active_git_commit');
+    } catch (e) {}
+  }
+  return null;
+};
+
+const getStoredActiveVersion = (): string | null => {
+  if (typeof window !== 'undefined') {
+    try {
+      return localStorage.getItem('paios_active_version');
+    } catch (e) {}
+  }
+  return null;
+};
+
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.4',
+  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.4'),
   buildNumber: '5',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
-  gitCommit: typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'be03ac7',
+  gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : '8bd340f'),
   releaseNotes: 'PAIOS v4.5.4: Money Manager Balance Sheet, Family Contribution & Interactive Debt/Invested Timelines',
   platforms: {
     windows: {
@@ -246,20 +264,30 @@ export class UpdateService {
 
     this.cachedManifest = manifest;
 
+    const runningCommit = (getStoredActiveCommit() || current.gitCommit || '').trim();
+    const runningVersion = (getStoredActiveVersion() || current.version || '').trim();
+
     // Detect if update is available
     const isNewerCommit =
-      targetCommit &&
-      targetCommit.toLowerCase().substring(0, 7) !== current.gitCommit.toLowerCase().substring(0, 7);
+      Boolean(targetCommit) &&
+      Boolean(runningCommit) &&
+      targetCommit.toLowerCase().substring(0, 7) !== runningCommit.toLowerCase().substring(0, 7);
 
-    const isNewerVersionStr = targetVersion !== current.version;
+    const isNewerVersionStr = Boolean(targetVersion) && targetVersion !== runningVersion;
     const isNewerTimestamp = (manifest.buildTimestamp || 0) > (current.buildTimestamp || 0);
 
-    const updateAvailable = Boolean(isNewerCommit || isNewerVersionStr || (latestCommitInfo && isNewerTimestamp));
+    const updateAvailable = Boolean(isNewerCommit || isNewerVersionStr);
+
+    const activeCurrent: VersionManifest = {
+      ...current,
+      version: runningVersion || current.version,
+      gitCommit: runningCommit || current.gitCommit,
+    };
 
     return {
       updateAvailable,
       manifest,
-      currentVersion: current,
+      currentVersion: activeCurrent,
     };
   }
 
@@ -456,6 +484,17 @@ export class UpdateService {
     downloadedData?: Blob | string | null
   ): Promise<void> {
     const platform = getRunningPlatform();
+
+    if (typeof window !== 'undefined' && manifest) {
+      try {
+        if (manifest.gitCommit) {
+          localStorage.setItem('paios_active_git_commit', manifest.gitCommit);
+        }
+        if (manifest.version) {
+          localStorage.setItem('paios_active_version', manifest.version);
+        }
+      } catch (e) {}
+    }
 
     // 1. Electron Platform Install / Reveal
     if (platform === 'electron') {

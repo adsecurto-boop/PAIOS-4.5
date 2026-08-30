@@ -144,8 +144,12 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
           <div className="flex items-center justify-between text-xs font-mono border-b border-slate-800/80 pb-2.5">
             <div>
               <span className="text-slate-400 block text-[10px]">Running Version</span>
-              <strong className="text-slate-300 font-bold">v{CURRENT_CLIENT_VERSION.version}</strong>
-              <span className="text-slate-500 ml-1">({CURRENT_CLIENT_VERSION.gitCommit})</span>
+              <strong className="text-slate-300 font-bold">
+                v{(typeof window !== 'undefined' ? localStorage.getItem('paios_active_version') : null) || CURRENT_CLIENT_VERSION.version}
+              </strong>
+              <span className="text-slate-500 ml-1">
+                ({(typeof window !== 'undefined' ? localStorage.getItem('paios_active_git_commit') : null) || CURRENT_CLIENT_VERSION.gitCommit})
+              </span>
             </div>
             <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
             <div className="text-right">
