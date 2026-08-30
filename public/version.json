@@ -1,26 +1,26 @@
 {
-  "version": "4.5.5",
-  "buildNumber": "6",
-  "buildTimestamp": 1787600000000,
-  "gitCommit": "4d2de7d",
-  "releaseNotes": "PAIOS v4.5.5: In-App Live Update System & Money Manager Wealth Projections",
+  "version": "4.5.6",
+  "buildNumber": "7",
+  "buildTimestamp": 1787700000000,
+  "gitCommit": "38d9184",
+  "releaseNotes": "PAIOS v4.5.6: Enhanced Android In-App Auto-Update & Real-Time Commit Synchronization",
   "mandatory": false,
   "platforms": {
     "windows": {
       "url": "https://raw.githubusercontent.com/adsecurto-boop/PAIOS-4.5/main/public/updates/PAIOS-Web-Dist.zip",
       "jenkinsUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
       "filename": "PAIOS-Web-Dist.zip",
-      "version": "4.5.5"
+      "version": "4.5.6"
     },
     "android": {
       "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk",
       "jenkinsUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk",
       "debugUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk",
       "filename": "app-release.apk",
-      "version": "4.5.5"
+      "version": "4.5.6"
     },
     "web": {
-      "version": "4.5.5"
+      "version": "4.5.6"
     }
   }
 }

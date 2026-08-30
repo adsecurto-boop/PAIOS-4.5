@@ -61,11 +61,11 @@ app.get('/api/health', (_req, res) => {
 
 // --- IN-APP SOFTWARE UPDATE & VERSION ENDPOINTS ---
 const dynamicVersionManifest: any = {
-  version: '4.5.5',
-  buildNumber: '6',
+  version: '4.5.6',
+  buildNumber: '7',
   buildTimestamp: Date.now(),
-  gitCommit: 'a8356fe',
-  releaseNotes: 'PAIOS v4.5.5: In-App Live Update System & Money Manager Wealth Projections',
+  gitCommit: '38d9184',
+  releaseNotes: 'PAIOS v4.5.6: Enhanced Android In-App Auto-Update & Real-Time Commit Synchronization',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',

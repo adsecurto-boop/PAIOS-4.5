@@ -426,7 +426,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
         fs.cpSync(sourceDistDir, userDistDir, { recursive: true, force: true });
 
         const activeManifest = {
-          version: version || '4.5.5',
+          version: version || '4.5.6',
           gitCommit: gitCommit || 'latest',
           appliedAt: Date.now(),
           sourcePackage: zipToApply,
