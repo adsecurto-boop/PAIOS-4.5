@@ -34,6 +34,26 @@ function saveConfig(config) {
   }
 }
 
+// Helper: Verify if a directory contains a valid compiled production web build
+function isValidProductionDist(dirPath) {
+  if (!dirPath || !fs.existsSync(dirPath)) return false;
+  const indexPath = path.join(dirPath, 'index.html');
+  const assetsPath = path.join(dirPath, 'assets');
+  if (!fs.existsSync(indexPath) || !fs.existsSync(assetsPath)) return false;
+
+  try {
+    const htmlContent = fs.readFileSync(indexPath, 'utf8');
+    // Reject development source templates pointing to /src/main.tsx
+    if (htmlContent.includes('/src/main.tsx') || htmlContent.includes('src="/src/')) {
+      return false;
+    }
+    // Must contain compiled asset references
+    return htmlContent.includes('assets/index-') || htmlContent.includes('./assets/');
+  } catch (err) {
+    return false;
+  }
+}
+
 function createWindow() {
   const config = loadConfig();
 
@@ -75,23 +95,28 @@ function createWindow() {
   const remoteUrl = process.env.PAIOS_REMOTE_URL || config.liveUrl || DEFAULT_LIVE_URL;
 
   function loadLocalDist() {
-    const userDistIndex = path.join(app.getPath('userData'), 'current_dist', 'index.html');
+    const userDistDir = path.join(app.getPath('userData'), 'current_dist');
+    const userDistIndex = path.join(userDistDir, 'index.html');
     const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
 
-    if (fs.existsSync(userDistIndex)) {
-      console.log('[PAIOS Electron] Loading updated live distribution from userData:', userDistIndex);
+    if (fs.existsSync(userDistIndex) && isValidProductionDist(userDistDir)) {
+      console.log('[PAIOS Electron] Loading verified updated distribution from userData:', userDistIndex);
       mainWindow.loadFile(userDistIndex).catch((err) => {
         console.warn('Failed to load updated dist from userData, falling back to bundled:', err);
         if (fs.existsSync(bundledDistIndex)) {
           mainWindow.loadFile(bundledDistIndex);
         }
       });
-    } else if (fs.existsSync(distIndex)) {
-      mainWindow.loadFile(distIndex).catch((err) => {
-        console.warn('Failed to load dist/index.html:', err);
-      });
     } else {
-      console.warn('dist/index.html not found. Run "npm run build" to create production assets.');
+      if (fs.existsSync(userDistDir) && !isValidProductionDist(userDistDir)) {
+        console.warn('[PAIOS Electron] Found invalid/uncompiled dist in userData, purging and falling back to bundled assets.');
+        fs.rmSync(userDistDir, { recursive: true, force: true });
+      }
+      if (fs.existsSync(bundledDistIndex)) {
+        mainWindow.loadFile(bundledDistIndex);
+      } else {
+        console.warn('dist/index.html not found. Run "npm run build" to create production assets.');
+      }
     }
   }
 
@@ -301,11 +326,10 @@ function extractZipArchive(zipFilePath, destinationDir) {
   });
 }
 
-// Helper: Recursively search folder for index.html
-function findDistFolder(dirPath, maxDepth = 4) {
+// Helper: Recursively search folder for a valid compiled production dist
+function findDistFolder(dirPath, maxDepth = 5) {
   if (maxDepth <= 0 || !fs.existsSync(dirPath)) return null;
-  const directIndex = path.join(dirPath, 'index.html');
-  if (fs.existsSync(directIndex)) {
+  if (isValidProductionDist(dirPath)) {
     return dirPath;
   }
   try {
@@ -349,8 +373,8 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath }) => {
       extractZipArchive(zipToApply, tempExtractDir);
       const sourceDistDir = findDistFolder(tempExtractDir);
 
-      if (sourceDistDir) {
-        console.log('[PAIOS Updater] Found updated web distribution at:', sourceDistDir);
+      if (sourceDistDir && isValidProductionDist(sourceDistDir)) {
+        console.log('[PAIOS Updater] Found valid compiled web distribution at:', sourceDistDir);
         if (!fs.existsSync(userDistDir)) {
           fs.mkdirSync(userDistDir, { recursive: true });
         }
@@ -367,6 +391,8 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath }) => {
           'utf8'
         );
         extractedSuccessfully = true;
+      } else {
+        console.warn('[PAIOS Updater] Archive did not contain a valid compiled production web build.');
       }
 
       // Check if full .exe is present
@@ -385,18 +411,24 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath }) => {
     }
   }
 
-  // Reload window with updated assets
+  // Reload window with verified assets
   const updatedIndexHtml = path.join(userDistDir, 'index.html');
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.webContents?.session) {
       await mainWindow.webContents.session.clearCache();
     }
-    if (fs.existsSync(updatedIndexHtml)) {
+    if (fs.existsSync(updatedIndexHtml) && isValidProductionDist(userDistDir)) {
       console.log('[PAIOS Updater] Live reloading with updated assets from:', updatedIndexHtml);
       await mainWindow.loadFile(updatedIndexHtml);
       return { success: true, updated: true };
     } else {
-      mainWindow.reload();
+      console.log('[PAIOS Updater] Reloading with standard bundled distribution...');
+      const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
+      if (fs.existsSync(bundledDistIndex)) {
+        await mainWindow.loadFile(bundledDistIndex);
+      } else {
+        mainWindow.reload();
+      }
       return { success: true, updated: false };
     }
   }

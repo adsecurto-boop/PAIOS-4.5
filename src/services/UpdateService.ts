@@ -297,7 +297,6 @@ export class UpdateService {
               'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip',
               'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/PAIOS-Desktop-Windows-x64.zip',
               '/api/version/download/windows',
-              'https://github.com/adsecurto-boop/PAIOS-4.5/archive/refs/heads/main.zip',
             ].filter(Boolean);
 
             electron.ipcRenderer
@@ -343,9 +342,10 @@ export class UpdateService {
           ].filter(Boolean)
         : [
             manifest.platforms?.windows?.url,
+            'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip',
+            'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip',
             'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/PAIOS-Desktop-Windows-x64.zip',
             '/api/version/download/windows',
-            'https://github.com/adsecurto-boop/PAIOS-4.5/archive/refs/heads/main.zip',
           ].filter(Boolean);
 
     let lastError: any = null;
