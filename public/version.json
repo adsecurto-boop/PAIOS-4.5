@@ -1,15 +1,15 @@
 {
   "version": "4.5.3",
   "buildNumber": "4",
-  "buildTimestamp": 1787485000000,
+  "buildTimestamp": 1787490000000,
   "gitCommit": "f000197",
   "releaseNotes": "PAIOS v4.5.3: Money Manager & Budget Analyzer Plugin and Verified In-App Auto-Updater",
   "mandatory": false,
   "platforms": {
     "windows": {
-      "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
-      "desktopZipUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip",
-      "filename": "PAIOS-Desktop-Windows-x64.zip",
+      "url": "https://raw.githubusercontent.com/adsecurto-boop/PAIOS-4.5/main/public/updates/PAIOS-Web-Dist.zip",
+      "jenkinsUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
+      "filename": "PAIOS-Web-Dist.zip",
       "version": "4.5.3"
     },
     "android": {
