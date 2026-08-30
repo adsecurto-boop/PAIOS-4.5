@@ -106,7 +106,7 @@ export class UpdateService {
   private static activeDownloadAbortController: AbortController | null = null;
 
   /**
-   * Helper: Parses GitHub Atom feed to get the absolute latest commit details
+   * Helper: Queries GitHub API / Atom feed to get the absolute latest commit details
    */
   private static async fetchLatestGitHubCommit(): Promise<{
     sha: string;
@@ -115,35 +115,74 @@ export class UpdateService {
     author: string;
     date: string;
   } | null> {
+    // 1. Try official GitHub REST API (CORS friendly across Android WebView & Desktop)
+    try {
+      const res = await fetch('https://api.github.com/repos/adsecurto-boop/PAIOS-4.5/commits/main', {
+        headers: { Accept: 'application/vnd.github.v3+json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.sha) {
+          const sha = data.sha;
+          const shortSha = sha.substring(0, 7);
+          const rawMessage = data.commit?.message || 'Updated build on main branch';
+          const title = rawMessage.split('\n')[0].trim();
+          const author = data.commit?.author?.name || data.author?.login || 'PAIOS Team';
+          const date = data.commit?.author?.date || new Date().toISOString();
+          return { sha, shortSha, title, author, date };
+        }
+      }
+    } catch (err) {
+      console.warn('[UpdateService] GitHub API query deferred:', err);
+    }
+
+    // 2. Fallback to GitHub Atom feed
     try {
       const res = await fetch('https://github.com/adsecurto-boop/PAIOS-4.5/commits/main.atom', {
         headers: { Accept: 'application/atom+xml, text/xml, */*' },
       });
-      if (!res.ok) return null;
+      if (res.ok) {
+        const xmlText = await res.text();
+        const entryMatch = xmlText.match(/<entry>([\s\S]*?)<\/entry>/);
+        if (entryMatch) {
+          const entryXml = entryMatch[1];
+          const idMatch = entryXml.match(/<id>tag:github\.com,2008:Grit::Commit\/([a-f0-9]+)<\/id>/i);
+          const titleMatch = entryXml.match(/<title>\s*([\s\S]*?)\s*<\/title>/i);
+          const updatedMatch = entryXml.match(/<updated>\s*([\s\S]*?)\s*<\/updated>/i);
+          const authorMatch = entryXml.match(/<author>[\s\S]*?<name>\s*([\s\S]*?)\s*<\/name>/i);
 
-      const xmlText = await res.text();
-      // Match first entry in Atom feed
-      const entryMatch = xmlText.match(/<entry>([\s\S]*?)<\/entry>/);
-      if (!entryMatch) return null;
+          const fullSha = idMatch ? idMatch[1] : '';
+          const shortSha = fullSha ? fullSha.substring(0, 7) : '';
+          const title = titleMatch ? titleMatch[1].trim() : 'Updated build on main branch';
+          const date = updatedMatch ? updatedMatch[1].trim() : new Date().toISOString();
+          const author = authorMatch ? authorMatch[1].trim() : 'adsecurto-boop';
 
-      const entryXml = entryMatch[1];
-      const idMatch = entryXml.match(/<id>tag:github\.com,2008:Grit::Commit\/([a-f0-9]+)<\/id>/i);
-      const titleMatch = entryXml.match(/<title>\s*([\s\S]*?)\s*<\/title>/i);
-      const updatedMatch = entryXml.match(/<updated>\s*([\s\S]*?)\s*<\/updated>/i);
-      const authorMatch = entryXml.match(/<author>[\s\S]*?<name>\s*([\s\S]*?)\s*<\/name>/i);
-
-      const fullSha = idMatch ? idMatch[1] : '';
-      const shortSha = fullSha ? fullSha.substring(0, 7) : '';
-      const title = titleMatch ? titleMatch[1].trim() : 'Updated build on main branch';
-      const date = updatedMatch ? updatedMatch[1].trim() : new Date().toISOString();
-      const author = authorMatch ? authorMatch[1].trim() : 'adsecurto-boop';
-
-      if (fullSha) {
-        return { sha: fullSha, shortSha, title, author, date };
+          if (fullSha) {
+            return { sha: fullSha, shortSha, title, author, date };
+          }
+        }
       }
     } catch (err) {
       console.warn('[UpdateService] Atom feed query deferred:', err);
     }
+
+    // 3. Fallback to public/version.json on GitHub Raw
+    try {
+      const res = await fetch('https://raw.githubusercontent.com/adsecurto-boop/PAIOS-4.5/main/public/version.json?t=' + Date.now());
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.gitCommit) {
+          return {
+            sha: data.gitCommit,
+            shortSha: data.gitCommit.substring(0, 7),
+            title: data.releaseNotes || 'PAIOS Updates & Optimizations',
+            author: 'PAIOS Team',
+            date: new Date(data.buildTimestamp || Date.now()).toISOString(),
+          };
+        }
+      }
+    } catch (err) {}
+
     return null;
   }
 
@@ -364,6 +403,8 @@ export class UpdateService {
       platform === 'android'
         ? [
             manifest.platforms?.android?.url,
+            'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk',
+            'http://10.0.2.2:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk',
             'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk',
             'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk',
             '/api/version/download/android',
