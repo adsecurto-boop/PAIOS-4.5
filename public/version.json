@@ -2,8 +2,8 @@
   "version": "4.5.6",
   "buildNumber": "7",
   "buildTimestamp": 1787700000000,
-  "gitCommit": "c9fc4c9",
-  "releaseNotes": "PAIOS v4.5.6: Enhanced Android In-App Auto-Update & Real-Time Commit Synchronization",
+  "gitCommit": "a8c3d61",
+  "releaseNotes": "PAIOS v4.5.6: Marketplace Plugins Gemini API Key Integration & Wealth Audit Fix",
   "mandatory": false,
   "platforms": {
     "windows": {
