@@ -19,8 +19,10 @@ import {
   Wallet,
   Users,
   Percent,
+  Plus,
+  Trash2,
 } from 'lucide-react';
-import { BudgetProfile } from '../../types';
+import { BudgetProfile, VariableIncomeStream } from '../../types';
 
 interface BudgetSetupModalProps {
   isOpen: boolean;
@@ -37,6 +39,12 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
 }) => {
   const [currency, setCurrency] = useState(initialProfile.currency || '$');
   const [monthlySalary, setMonthlySalary] = useState(initialProfile.monthlySalary || 5000);
+  const [expectedVariableIncome, setExpectedVariableIncome] = useState(
+    initialProfile.expectedVariableIncome || 0
+  );
+  const [variableStreams, setVariableStreams] = useState<VariableIncomeStream[]>(
+    initialProfile.variableIncomeStreams || []
+  );
   const [salaryCycleDay, setSalaryCycleDay] = useState(initialProfile.salaryCycleDay || 1);
 
   // Balance Sheet & Current Wealth Position
@@ -67,7 +75,17 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
 
   const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
 
+  // New Stream Input state
+  const [newStreamName, setNewStreamName] = useState('');
+  const [newStreamAmount, setNewStreamAmount] = useState('');
+  const [newStreamCategory, setNewStreamCategory] = useState<VariableIncomeStream['category']>('Freelance');
+
   if (!isOpen) return null;
+
+  const totalVariable =
+    Number(expectedVariableIncome) +
+    variableStreams.reduce((acc, s) => acc + (Number(s.expectedMonthlyAmount) || 0), 0);
+  const totalMonthlyIncome = Number(monthlySalary) + totalVariable;
 
   const totalFixed =
     Number(foodMonthly) +
@@ -78,9 +96,26 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
     Number(familyContributionMonthly);
 
   const totalGrowth = Number(learningMonthly) + Number(investingMonthly) + Number(savingsMonthly);
-  const freeCapital = Math.max(0, Number(monthlySalary) - (totalFixed + totalGrowth));
+  const freeCapital = Math.max(0, totalMonthlyIncome - (totalFixed + totalGrowth));
   const estimatedDailySafe = Math.round((freeCapital / 30) * 100) / 100;
   const netWorth = (Number(currentBalance) + Number(currentSaved) + Number(currentInvested)) - Number(currentDebt);
+
+  const handleAddVariableStream = () => {
+    if (!newStreamName.trim() || !newStreamAmount) return;
+    const stream: VariableIncomeStream = {
+      id: `stream_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: newStreamName.trim(),
+      category: newStreamCategory,
+      expectedMonthlyAmount: Math.max(0, Number(newStreamAmount)),
+    };
+    setVariableStreams([...variableStreams, stream]);
+    setNewStreamName('');
+    setNewStreamAmount('');
+  };
+
+  const handleRemoveVariableStream = (id: string) => {
+    setVariableStreams(variableStreams.filter((s) => s.id !== id));
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,6 +124,8 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
       id: initialProfile.id || 'user_budget_profile',
       currency,
       monthlySalary: Math.max(0, Number(monthlySalary)),
+      expectedVariableIncome: totalVariable,
+      variableIncomeStreams: variableStreams,
       salaryCycleDay: Math.max(1, Math.min(31, Number(salaryCycleDay))),
       // Balance Sheet
       currentBalance: Math.max(0, Number(currentBalance)),
@@ -128,14 +165,14 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-heading font-extrabold text-lg text-white">
-                  Budget Planner & Wealth Setup
+                  Budget Planner & Multi-Stream Setup
                 </h3>
                 <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-600/50 px-2 py-0.5 rounded-full">
                   Step {activeStep} of 3
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Configure your monthly cashflow, balance sheet, family support, and growth targets
+                Configure primary salary, variable income streams, balance sheet, and growth allocations
               </p>
             </div>
           </div>
@@ -156,7 +193,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
               activeStep === 1 ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            1. Income & Balances
+            1. Income & Streams
           </button>
           <button
             onClick={() => setActiveStep(2)}
@@ -177,7 +214,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
         </div>
 
         <form onSubmit={handleSave} className="space-y-4">
-          {/* STEP 1: Income, Salary Cycle & Balance Sheet */}
+          {/* STEP 1: Income, Variable Streams & Balance Sheet */}
           {activeStep === 1 && (
             <div className="space-y-4 animate-fade-in">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -201,7 +238,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                 {/* Monthly Salary */}
                 <div className="sm:col-span-2">
                   <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Monthly In-Hand Salary / Income
+                    Primary In-Hand Salary / Base Income
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-2 text-slate-400 font-mono text-sm">{currency}</span>
@@ -215,6 +252,90 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                       className="w-full pl-8 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm font-semibold text-white focus:outline-none focus:border-indigo-500 font-mono"
                       placeholder="5000"
                     />
+                  </div>
+                </div>
+              </div>
+
+              {/* Multi-Stream Variable Income Tracker */}
+              <div className="p-3.5 bg-slate-950 rounded-2xl border border-slate-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Expected Variable Income Streams</span>
+                  </span>
+                  <span className="text-xs font-mono font-bold text-emerald-300">
+                    +{currency}{totalVariable.toLocaleString()}/mo
+                  </span>
+                </div>
+
+                {/* Variable Streams List */}
+                {variableStreams.length > 0 && (
+                  <div className="space-y-1.5">
+                    {variableStreams.map((st) => (
+                      <div
+                        key={st.id}
+                        className="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-white font-bold">{st.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                            {st.category}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400 font-bold">
+                            +{currency}{st.expectedMonthlyAmount.toLocaleString()}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveVariableStream(st.id)}
+                            className="p-1 text-slate-500 hover:text-rose-400"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add Stream Form */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  <input
+                    type="text"
+                    placeholder="Stream Name (e.g. Freelance, Side Gig)"
+                    value={newStreamName}
+                    onChange={(e) => setNewStreamName(e.target.value)}
+                    className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white"
+                  />
+                  <select
+                    value={newStreamCategory}
+                    onChange={(e) => setNewStreamCategory(e.target.value as any)}
+                    className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white"
+                  >
+                    <option value="Freelance">Freelance</option>
+                    <option value="SideCash">Side Cash / Hustle</option>
+                    <option value="Dividends">Dividends / Yield</option>
+                    <option value="Reimbursements">Reimbursements</option>
+                    <option value="Gift">Gift / Bonus</option>
+                    <option value="OtherIncome">Other Income</option>
+                  </select>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      placeholder="Amount"
+                      min="0"
+                      value={newStreamAmount}
+                      onChange={(e) => setNewStreamAmount(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddVariableStream}
+                      className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shrink-0"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -247,7 +368,6 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                   <span>Current Balances & Wealth Positions</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Current Checking/Liquid Balance */}
                   <div>
                     <label className="text-xs text-slate-300 block mb-1">Current Checking / Liquid Cash</label>
                     <div className="relative">
@@ -262,7 +382,6 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Current Emergency Savings */}
                   <div>
                     <label className="text-xs text-slate-300 block mb-1">Current Saved Amount (Emergency Fund)</label>
                     <div className="relative">
@@ -277,7 +396,6 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Current Total Invested */}
                   <div>
                     <label className="text-xs text-slate-300 block mb-1">Current Invested Portfolio</label>
                     <div className="relative">
@@ -292,7 +410,6 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Current Outstanding Debt */}
                   <div>
                     <label className="text-xs text-slate-300 block mb-1">Current Total Debt (Loans, Cards)</label>
                     <div className="relative">
@@ -311,9 +428,9 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
 
               {/* Net Worth Preview */}
               <div className="p-3 bg-slate-950/90 rounded-2xl border border-slate-800 flex items-center justify-between text-xs font-mono">
-                <span className="text-slate-400">Calculated Net Worth:</span>
-                <strong className={`text-sm font-bold ${netWorth >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {currency}{netWorth.toLocaleString()}
+                <span className="text-slate-400">Total Monthly Inflow Base:</span>
+                <strong className="text-sm font-bold text-emerald-400">
+                  {currency}{totalMonthlyIncome.toLocaleString()} / mo
                 </strong>
               </div>
             </div>
@@ -438,7 +555,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
               <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex items-center justify-between text-xs font-mono">
                 <span className="text-slate-400">Total Fixed Obligations:</span>
                 <strong className="text-amber-300 font-bold">
-                  {currency}{totalFixed.toLocaleString()} ({Math.round((totalFixed / (monthlySalary || 1)) * 100)}%)
+                  {currency}{totalFixed.toLocaleString()} ({Math.round((totalFixed / (totalMonthlyIncome || 1)) * 100)}%)
                 </strong>
               </div>
             </div>
@@ -518,18 +635,18 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                 <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono">
                   <div className="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
                     <span className="text-[10px] text-slate-400 block">Needs</span>
-                    <strong className="text-amber-300">{currency}{totalFixed}</strong>
-                    <span className="text-[10px] text-slate-500 block">({Math.round((totalFixed / (monthlySalary || 1)) * 100)}%)</span>
+                    <strong className="text-amber-300">{currency}{totalFixed.toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-500 block">({Math.round((totalFixed / (totalMonthlyIncome || 1)) * 100)}%)</span>
                   </div>
                   <div className="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
                     <span className="text-[10px] text-slate-400 block">Free Capital</span>
-                    <strong className="text-cyan-300">{currency}{freeCapital}</strong>
-                    <span className="text-[10px] text-slate-500 block">({Math.round((freeCapital / (monthlySalary || 1)) * 100)}%)</span>
+                    <strong className="text-cyan-300">{currency}{freeCapital.toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-500 block">({Math.round((freeCapital / (totalMonthlyIncome || 1)) * 100)}%)</span>
                   </div>
                   <div className="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
                     <span className="text-[10px] text-slate-400 block">Invest/Save</span>
-                    <strong className="text-emerald-400">{currency}{totalGrowth}</strong>
-                    <span className="text-[10px] text-slate-500 block">({Math.round((totalGrowth / (monthlySalary || 1)) * 100)}%)</span>
+                    <strong className="text-emerald-400">{currency}{totalGrowth.toLocaleString()}</strong>
+                    <span className="text-[10px] text-slate-500 block">({Math.round((totalGrowth / (totalMonthlyIncome || 1)) * 100)}%)</span>
                   </div>
                 </div>
 

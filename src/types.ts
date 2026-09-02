@@ -283,13 +283,30 @@ export type BudgetCategory =
   | 'Investing'
   | 'Savings'
   | 'Entertainment'
+  | 'Salary'
+  | 'Freelance'
+  | 'SideCash'
+  | 'Dividends'
+  | 'Reimbursements'
+  | 'Gift'
+  | 'OtherIncome'
   | 'Other';
+
+export interface VariableIncomeStream {
+  id: string;
+  name: string;
+  category: 'Freelance' | 'SideCash' | 'Dividends' | 'Reimbursements' | 'Gift' | 'OtherIncome';
+  expectedMonthlyAmount: number;
+}
 
 export interface BudgetProfile {
   id: string;
   monthlySalary: number;
   currency: string;
   salaryCycleDay: number; // 1 to 31 (day of month salary arrives)
+  // Multi-Stream Variable Income
+  expectedVariableIncome?: number;
+  variableIncomeStreams?: VariableIncomeStream[];
   // Balance Sheet & Current Wealth Position
   currentBalance?: number; // Checking / liquid cash balance
   currentSaved?: number; // Current emergency / liquid savings
@@ -310,6 +327,8 @@ export interface BudgetProfile {
   savingsMonthly: number;
   discretionaryMonthly: number;
   expectedAnnualReturnRate: number; // e.g. 10 (%) for compound projection
+  appliedRecoveryAdjustment?: number; // Daily budget deduction quota applied by recovery arbiter
+  categoryCaps?: Partial<Record<BudgetCategory, number>>; // Optional explicit monthly category caps
   updatedAtMillis: number;
 }
 
@@ -317,11 +336,14 @@ export interface ExpenseTransaction {
   id: string;
   title: string;
   amount: number;
+  type?: 'INFLOW' | 'OUTFLOW'; // Defaults to 'OUTFLOW' for backwards compatibility
   category: BudgetCategory | string;
   dateString: string; // YYYY-MM-DD
+  timeString?: string; // HH:mm
   timestampMillis: number;
   isNecessity: boolean;
   note?: string;
+  notes?: string;
 }
 
 export interface DailySurplusRecord {
@@ -331,6 +353,69 @@ export interface DailySurplusRecord {
   actualSpend: number;
   sweptAmount: number;
   timestampMillis: number;
+}
+
+export interface DailyNetSavings {
+  dateString: string;
+  totalInflow: number;
+  totalOutflow: number;
+  netSaved: number;
+  safeDailyBudget: number;
+  unspentAllowance: number;
+  totalSweptPotential: number;
+}
+
+export type VarianceStatus = 'ON_TRACK' | 'APPROACHING_LIMIT' | 'OVER_BUDGET';
+
+export interface PlannedVsActualCategory {
+  category: BudgetCategory | string;
+  planned: number;
+  actual: number;
+  variance: number; // positive = under budget, negative = over budget
+  percentUsed: number;
+  status: VarianceStatus;
+}
+
+export interface PlannedVsActualTimeline {
+  daily: {
+    safeCap: number;
+    actualSpent: number;
+    variance: number;
+    status: VarianceStatus;
+  };
+  weekly: {
+    rollingCap: number;
+    actualSpent: number;
+    variance: number;
+    status: VarianceStatus;
+  };
+  monthly: {
+    needsPlanned: number;
+    needsActual: number;
+    wantsPlanned: number;
+    wantsActual: number;
+    savingsPlanned: number;
+    savingsActual: number;
+    categories: PlannedVsActualCategory[];
+  };
+}
+
+export interface BudgetRecoveryState {
+  activeBreach: boolean;
+  overageAmount: number;
+  breachedCategory?: string;
+  daysRemaining: number;
+  dailyReductionQuota: number;
+  appliedDailyAdjustment: number;
+  tradeOffSuggestion?: string;
+  shiftedSurplusHistory?: {
+    fromCategory: string;
+    toCategory: string;
+    amount: number;
+    timestampMillis: number;
+  }[];
+  status: 'IDLE' | 'ADJUSTED' | 'RESOLVED';
+  updatedAtMillis: number;
 }
 
 export interface BudgetAnalysisResult {
@@ -351,6 +436,9 @@ export interface BudgetAnalysisResult {
   totalAssets?: number;
   totalDebt?: number;
   debtFreeMonths?: number;
+  appliedDailyAdjustment?: number;
+  effectiveDailyBudget?: number;
   recommendations: string[];
 }
+
 

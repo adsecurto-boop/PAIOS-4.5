@@ -23,6 +23,7 @@ import {
   BudgetProfile,
   ExpenseTransaction,
   DailySurplusRecord,
+  BudgetRecoveryState,
 } from './types';
 import { DEFAULT_BUDGET_PROFILE } from './core/plugins/MoneyManagerPlugin';
 import { ConflictResolver } from './core/sync/ConflictResolver';
@@ -50,6 +51,17 @@ const STORAGE_KEYS = {
   BUDGET_PROFILE: 'paios_budget_profile_v1',
   EXPENSES: 'paios_expenses_v1',
   DAILY_SURPLUS: 'paios_daily_surplus_v1',
+  BUDGET_RECOVERY: 'paios_budget_recovery_v1',
+};
+
+export const DEFAULT_BUDGET_RECOVERY_STATE: BudgetRecoveryState = {
+  activeBreach: false,
+  overageAmount: 0,
+  daysRemaining: 1,
+  dailyReductionQuota: 0,
+  appliedDailyAdjustment: 0,
+  status: 'IDLE',
+  updatedAtMillis: Date.now(),
 };
 
 export function getTodayDateString(): string {
@@ -1692,6 +1704,12 @@ ${journal.map((j) => `- [${formatTime(j.createdAtMillis)}] "${j.title}" (Mood Sc
       list.unshift(surplus);
     }
     save(STORAGE_KEYS.DAILY_SURPLUS, list);
+  },
+  getBudgetRecoveryState(): BudgetRecoveryState {
+    return load<BudgetRecoveryState>(STORAGE_KEYS.BUDGET_RECOVERY, DEFAULT_BUDGET_RECOVERY_STATE);
+  },
+  saveBudgetRecoveryState(state: BudgetRecoveryState): void {
+    save(STORAGE_KEYS.BUDGET_RECOVERY, state);
   },
 
   // --- LOCAL-FIRST CACHE & OFFLINE ENGINE HELPERS ---
