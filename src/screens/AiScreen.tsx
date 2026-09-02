@@ -43,6 +43,8 @@ interface AiScreenProps {
   onOpenAddTask?: () => void;
 }
 
+const DRAFT_STORAGE_KEY = 'paios_ai_input_draft';
+
 export const AiScreen: React.FC<AiScreenProps> = ({
   messages,
   userContextString,
@@ -57,7 +59,16 @@ export const AiScreen: React.FC<AiScreenProps> = ({
   onOpenStartActivity,
   onOpenAddTask,
 }) => {
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputText] = useState(() => {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        return sessionStorage.getItem(DRAFT_STORAGE_KEY) || '';
+      } catch (e) {
+        return '';
+      }
+    }
+    return '';
+  });
   const [isSending, setIsSending] = useState(false);
   const [activeRole, setActiveRole] = useState<ChatRole>('productivity');
   const [taskComplexity, setTaskComplexity] = useState<TaskComplexityMode>('general');
@@ -68,16 +79,38 @@ export const AiScreen: React.FC<AiScreenProps> = ({
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages, isSending]);
 
+  // Synchronize unsent prompt draft with sessionStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        if (inputText) {
+          sessionStorage.setItem(DRAFT_STORAGE_KEY, inputText);
+        } else {
+          sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+        }
+      } catch (e) {}
+    }
+  }, [inputText]);
+
   const handleSend = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
     if (!text || isSending) return;
+    
+    // Clear storage buffer when message is submitted
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch (e) {}
+    }
     setInputText('');
     setIsSending(true);
     try {

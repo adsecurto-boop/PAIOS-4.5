@@ -98,15 +98,45 @@ export async function dispatchNotification(
     console.warn('Capacitor local notification schedule failed:', e);
   }
 
-  // 3. Trigger HTML5 Desktop Browser Notification
-  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-    try {
-      new Notification(`PAIOS: ${title}`, {
-        body: message,
-        icon: '/favicon.ico',
-      });
-    } catch (e) {
-      console.warn('HTML5 Notification trigger error:', e);
+  // 3. Trigger Desktop OS Native Notification (Electron) or HTML5 Web Notification
+  if (typeof window !== 'undefined') {
+    const electronAPI = (window as any).electronAPI;
+    const electron = (window as any).require ? (window as any).require('electron') : null;
+
+    let dispatchedViaElectron = false;
+    if (electronAPI && typeof electronAPI.sendNotification === 'function') {
+      try {
+        electronAPI.sendNotification({
+          title: `PAIOS: ${title}`,
+          body: message,
+          message,
+        });
+        dispatchedViaElectron = true;
+      } catch (e) {
+        console.warn('Electron window.electronAPI notification failed:', e);
+      }
+    } else if (electron && electron.ipcRenderer && typeof electron.ipcRenderer.send === 'function') {
+      try {
+        electron.ipcRenderer.send('show-desktop-notification', {
+          title: `PAIOS: ${title}`,
+          body: message,
+          message,
+        });
+        dispatchedViaElectron = true;
+      } catch (e) {
+        console.warn('Electron ipcRenderer notification failed:', e);
+      }
+    }
+
+    if (!dispatchedViaElectron && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(`PAIOS: ${title}`, {
+          body: message,
+          icon: '/favicon.ico',
+        });
+      } catch (e) {
+        console.warn('HTML5 Notification trigger error:', e);
+      }
     }
   }
 

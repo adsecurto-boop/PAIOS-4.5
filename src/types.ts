@@ -192,7 +192,7 @@ export interface AIMessage {
   sender?: "USER" | "AI";
   isUser?: boolean;
   text: string;
-  actionType?: "ADD_TASK" | "START_ACTIVITY" | "SAVE_NOTE" | "LOG_DOSE" | "LOG_SYMPTOM" | "BOOK_APPOINTMENT" | null;
+  actionType?: "ADD_TASK" | "START_ACTIVITY" | "SAVE_NOTE" | "LOG_DOSE" | "record_medication_dose" | "LOG_SYMPTOM" | "BOOK_APPOINTMENT" | null;
   actionPayloadJson?: string | null;
   isActionConfirmed?: boolean | null;
   timestampMillis: number;

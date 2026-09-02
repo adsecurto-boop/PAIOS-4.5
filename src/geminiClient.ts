@@ -191,6 +191,9 @@ ${userContext || 'No context available.'}
       if (actionPayloadJson.includes('ADD_TASK')) actionType = 'ADD_TASK';
       else if (actionPayloadJson.includes('START_ACTIVITY')) actionType = 'START_ACTIVITY';
       else if (actionPayloadJson.includes('SAVE_NOTE')) actionType = 'SAVE_NOTE';
+      else if (actionPayloadJson.includes('LOG_DOSE') || actionPayloadJson.includes('record_medication_dose')) actionType = 'LOG_DOSE';
+      else if (actionPayloadJson.includes('LOG_SYMPTOM')) actionType = 'LOG_SYMPTOM';
+      else if (actionPayloadJson.includes('BOOK_APPOINTMENT')) actionType = 'BOOK_APPOINTMENT';
     }
 
     const cleanText = fullText.replace(actionRegex, '').trim();

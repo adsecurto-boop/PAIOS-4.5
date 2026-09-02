@@ -62,7 +62,7 @@ const DEFAULT_PLUGINS: PluginMeta[] = [
     name: 'Money Manager & Budget Analyzer',
     category: 'Finance',
     description: 'Calculates monthly obligations, daily safe-to-spend limits, leftover surplus sweeps, and 5-year compound growth projections.',
-    version: '4.5.6',
+    version: '4.5.7',
     icon: 'wallet',
     author: 'PAIOS Financial Labs',
     installed: true,

@@ -702,12 +702,26 @@ export const App: React.FC = () => {
         const data = await response.json();
         const botMsg: AiChatMessage = {
           id: Date.now() + 1,
-          text: data.text || data.error || "I'm sorry, I couldn't generate a response.",
+          text: data.text || data.reply || data.error || "I'm sorry, I couldn't generate a response.",
           isUser: false,
           timestampMillis: Date.now(),
           actionType: data.actionType || undefined,
           actionPayloadJson: data.actionPayloadJson || undefined,
         };
+
+        // Auto-execute dose recording tool mutations immediately into Health ledger
+        if (
+          botMsg.actionType === 'LOG_DOSE' ||
+          botMsg.actionType === 'record_medication_dose' ||
+          (botMsg.actionPayloadJson && (botMsg.actionPayloadJson.includes('LOG_DOSE') || botMsg.actionPayloadJson.includes('record_medication_dose')))
+        ) {
+          handleExecuteAiAction(botMsg.actionType || 'LOG_DOSE', botMsg.actionPayloadJson!);
+          botMsg.isActionConfirmed = true;
+        } else if (/\b(take|took|mark.*dose|record.*dose|log.*dose)\b/i.test(userText)) {
+          handleExecuteAiAction('LOG_DOSE', JSON.stringify({ type: 'record_medication_dose', action: 'TAKEN', medication_ids: ['all_due'] }));
+          botMsg.isActionConfirmed = true;
+        }
+
         PAIOSStorage.addAiMessage(botMsg);
         reloadState();
         return;
@@ -733,6 +747,20 @@ export const App: React.FC = () => {
         actionType: (fallbackData.actionType as any) || undefined,
         actionPayloadJson: fallbackData.actionPayloadJson || undefined,
       };
+
+      // Auto-execute dose recording tool mutations in fallback flow
+      if (
+        botMsg.actionType === 'LOG_DOSE' ||
+        botMsg.actionType === 'record_medication_dose' ||
+        (botMsg.actionPayloadJson && (botMsg.actionPayloadJson.includes('LOG_DOSE') || botMsg.actionPayloadJson.includes('record_medication_dose')))
+      ) {
+        handleExecuteAiAction(botMsg.actionType || 'LOG_DOSE', botMsg.actionPayloadJson!);
+        botMsg.isActionConfirmed = true;
+      } else if (/\b(take|took|mark.*dose|record.*dose|log.*dose)\b/i.test(userText)) {
+        handleExecuteAiAction('LOG_DOSE', JSON.stringify({ type: 'record_medication_dose', action: 'TAKEN', medication_ids: ['all_due'] }));
+        botMsg.isActionConfirmed = true;
+      }
+
       PAIOSStorage.addAiMessage(botMsg);
       reloadState();
     } catch (err: any) {
@@ -755,6 +783,19 @@ export const App: React.FC = () => {
           actionType: (fallbackData.actionType as any) || undefined,
           actionPayloadJson: fallbackData.actionPayloadJson || undefined,
         };
+
+        if (
+          botMsg.actionType === 'LOG_DOSE' ||
+          botMsg.actionType === 'record_medication_dose' ||
+          (botMsg.actionPayloadJson && (botMsg.actionPayloadJson.includes('LOG_DOSE') || botMsg.actionPayloadJson.includes('record_medication_dose')))
+        ) {
+          handleExecuteAiAction(botMsg.actionType || 'LOG_DOSE', botMsg.actionPayloadJson!);
+          botMsg.isActionConfirmed = true;
+        } else if (/\b(take|took|mark.*dose|record.*dose|log.*dose)\b/i.test(userText)) {
+          handleExecuteAiAction('LOG_DOSE', JSON.stringify({ type: 'record_medication_dose', action: 'TAKEN', medication_ids: ['all_due'] }));
+          botMsg.isActionConfirmed = true;
+        }
+
         PAIOSStorage.addAiMessage(botMsg);
         reloadState();
       } catch (fallbackErr: any) {
@@ -846,11 +887,54 @@ export const App: React.FC = () => {
         PAIOSStorage.startActivity(payload.name || 'AI Session', payload.category || 'Work', 'Started via PAIOS AI');
       } else if (actionType === 'SAVE_NOTE' || payload.type === 'SAVE_NOTE') {
         PAIOSStorage.addQuickCaptureNote(payload.text || 'AI Note', 'Personal');
-      } else if (actionType === 'LOG_DOSE' || payload.type === 'LOG_DOSE') {
+      } else if (
+        actionType === 'LOG_DOSE' ||
+        payload.type === 'LOG_DOSE' ||
+        actionType === 'record_medication_dose' ||
+        payload.type === 'record_medication_dose'
+      ) {
         const doseList = PAIOSStorage.getDoseEvents();
-        const targetDose = doseList.find((d) => d.medicationName.toLowerCase().includes((payload.medicationName || '').toLowerCase()));
-        if (targetDose) {
-          PAIOSStorage.logDoseEvent(targetDose.id, payload.status || 'TAKEN', 'Logged via PAIOS AI');
+        const medIds: string[] = Array.isArray(payload.medication_ids)
+          ? payload.medication_ids
+          : payload.medicationId
+          ? [payload.medicationId]
+          : payload.medicationName
+          ? [payload.medicationName]
+          : [];
+        const actionStatus: DoseStatus = payload.action || payload.status || 'TAKEN';
+        const noteText = payload.notes || 'Recorded via PAIOS AI Tool Execution';
+
+        if (
+          medIds.length === 0 ||
+          medIds.some((id) => ['all', 'all_due', 'all_scheduled', 'due', 'today'].includes(String(id).toLowerCase()))
+        ) {
+          // Mark all scheduled doses for today
+          doseList.forEach((d) => {
+            if (d.status === 'SCHEDULED') {
+              PAIOSStorage.logDoseEvent(d.id, actionStatus, noteText);
+            }
+          });
+        } else {
+          medIds.forEach((query) => {
+            const cleanQuery = String(query).toLowerCase().trim();
+            const matching = doseList.filter(
+              (d) =>
+                d.id.toLowerCase() === cleanQuery ||
+                d.medicationId.toLowerCase() === cleanQuery ||
+                d.medicationName.toLowerCase().includes(cleanQuery)
+            );
+            if (matching.length > 0) {
+              matching.forEach((d) => {
+                PAIOSStorage.logDoseEvent(d.id, actionStatus, noteText);
+              });
+            } else {
+              // If none matched yet by exact name, take first scheduled dose
+              const firstDue = doseList.find((d) => d.status === 'SCHEDULED');
+              if (firstDue) {
+                PAIOSStorage.logDoseEvent(firstDue.id, actionStatus, noteText);
+              }
+            }
+          });
         }
       } else if (actionType === 'LOG_SYMPTOM' || payload.type === 'LOG_SYMPTOM') {
         PAIOSStorage.logVitalSign({

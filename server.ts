@@ -61,11 +61,11 @@ app.get('/api/health', (_req, res) => {
 
 // --- IN-APP SOFTWARE UPDATE & VERSION ENDPOINTS ---
 const dynamicVersionManifest: any = {
-  version: '4.5.6',
-  buildNumber: '7',
+  version: '4.5.7',
+  buildNumber: '8',
   buildTimestamp: Date.now(),
-  gitCommit: '38d9184',
-  releaseNotes: 'PAIOS v4.5.6: Enhanced Android In-App Auto-Update & Real-Time Commit Synchronization',
+  gitCommit: 'f4b9e27',
+  releaseNotes: 'PAIOS v4.5.7: Health Schedule Synchronization, OS Native Toast Notifications, AI Prompt Draft Persistence & Conversational Dose Adherence Execution',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
@@ -461,12 +461,28 @@ app.post('/api/ai/chat', requireAuth, async (req, res) => {
 
     // Test environment or dummy key fallback
     if (process.env.NODE_ENV === 'test' || !apiKey || apiKey.startsWith('test-')) {
-      const mockReply = `Server-side AI response for: ${cleanUserText}`;
+      let actionType: string | null = null;
+      let actionPayloadJson: string | null = null;
+      let mockReply = `Server-side AI response for: ${cleanUserText}`;
+
+      // If user confirms taking medication doses
+      if (/\b(take|took|mark.*dose|record.*dose|log.*dose|taken)\b/i.test(cleanUserText)) {
+        actionType = 'LOG_DOSE';
+        actionPayloadJson = JSON.stringify({
+          type: 'record_medication_dose',
+          action: 'TAKEN',
+          medication_ids: ['all_due'],
+          notes: 'Dose marked taken via AI Assistant conversation',
+          timestamp: Date.now(),
+        });
+        mockReply = `I have marked your scheduled medication dose as taken in your Health Ledger.`;
+      }
+
       return res.status(200).json({
         reply: mockReply,
         text: mockReply,
-        actionType: null,
-        actionPayloadJson: null,
+        actionType,
+        actionPayloadJson,
         usage: { totalTokens: 32 },
       });
     }
@@ -526,9 +542,11 @@ or
 or
 [[ACTION: {"type": "SAVE_NOTE", "text": "Investigate API timeout issue"}]]
 or
-[[ACTION: {"type": "LOG_DOSE", "medicationName": "Sertraline 50 mg", "status": "TAKEN"}]]
+[[ACTION: {"type": "LOG_DOSE", "medication_ids": ["med_1"], "action": "TAKEN", "notes": "Morning dose taken"}]]
 or
 [[ACTION: {"type": "LOG_SYMPTOM", "symptomName": "Dizziness", "severity": 3}]]
+or
+[[ACTION: {"type": "BOOK_APPOINTMENT", "doctorName": "Dr Devendra Ratnani", "dateString": "2026-09-02", "timeString": "10:30", "reason": "Follow-up"}]]
 
 Active PAIOS Context & Metadata:
 ${userContext || 'No context available.'}
@@ -559,6 +577,7 @@ ${userContext || 'No context available.'}
     let fullText = '';
     let lastError: any = null;
     let usageMetadata: any = null;
+    let geminiFunctionCalls: any[] = [];
 
     for (const targetModel of modelCandidates) {
       try {
@@ -580,6 +599,9 @@ ${userContext || 'No context available.'}
         });
         fullText = response.text || '';
         usageMetadata = response.usageMetadata;
+        if (response.functionCalls && response.functionCalls.length > 0) {
+          geminiFunctionCalls = response.functionCalls;
+        }
         if (fullText) break;
       } catch (err: any) {
         lastError = err;
@@ -588,13 +610,13 @@ ${userContext || 'No context available.'}
       }
     }
 
-    if (!fullText) {
+    if (!fullText && geminiFunctionCalls.length === 0) {
       return res.status(502).json({
         error: `AI gateway communication failed: ${lastError?.message || '502 Bad Gateway'}`,
       });
     }
 
-    // Parse action block
+    // Parse action block or tool calls
     let actionType: string | null = null;
     let actionPayloadJson: string | null = null;
     const actionRegex = /\[\[ACTION:\s*(\{.*?\})\s*\]\]/s;
@@ -605,9 +627,35 @@ ${userContext || 'No context available.'}
       if (actionPayloadJson.includes('ADD_TASK')) actionType = 'ADD_TASK';
       else if (actionPayloadJson.includes('START_ACTIVITY')) actionType = 'START_ACTIVITY';
       else if (actionPayloadJson.includes('SAVE_NOTE')) actionType = 'SAVE_NOTE';
+      else if (actionPayloadJson.includes('LOG_DOSE') || actionPayloadJson.includes('record_medication_dose')) actionType = 'LOG_DOSE';
+      else if (actionPayloadJson.includes('LOG_SYMPTOM')) actionType = 'LOG_SYMPTOM';
+      else if (actionPayloadJson.includes('BOOK_APPOINTMENT')) actionType = 'BOOK_APPOINTMENT';
     }
 
-    const cleanText = fullText.replace(actionRegex, '').trim();
+    if (!actionType && geminiFunctionCalls.length > 0) {
+      const call = geminiFunctionCalls[0];
+      if (call.name === 'record_medication_dose' || call.name === 'log_dose') {
+        actionType = 'LOG_DOSE';
+        actionPayloadJson = JSON.stringify({
+          type: 'record_medication_dose',
+          medication_ids: call.args?.medication_ids || ['all_due'],
+          action: call.args?.action || 'TAKEN',
+          notes: call.args?.notes || 'Logged via PAIOS AI Tool Execution',
+          timestamp: call.args?.timestamp || Date.now(),
+        });
+      } else if (call.name === 'add_task') {
+        actionType = 'ADD_TASK';
+        actionPayloadJson = JSON.stringify({ type: 'ADD_TASK', ...call.args });
+      } else if (call.name === 'start_activity') {
+        actionType = 'START_ACTIVITY';
+        actionPayloadJson = JSON.stringify({ type: 'START_ACTIVITY', ...call.args });
+      } else if (call.name === 'save_note') {
+        actionType = 'SAVE_NOTE';
+        actionPayloadJson = JSON.stringify({ type: 'SAVE_NOTE', ...call.args });
+      }
+    }
+
+    const cleanText = fullText.replace(actionRegex, '').trim() || (actionType ? `Action ${actionType} recorded successfully.` : '');
 
     res.status(200).json({
       reply: cleanText,

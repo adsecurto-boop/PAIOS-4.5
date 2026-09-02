@@ -60,11 +60,11 @@ const getStoredActiveVersion = (): string | null => {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.6'),
-  buildNumber: '7',
+  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.7'),
+  buildNumber: '8',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
-  gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : '38d9184'),
-  releaseNotes: 'PAIOS v4.5.6: Enhanced Android In-App Auto-Update & Real-Time Commit Synchronization',
+  gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'f4b9e27'),
+  releaseNotes: 'PAIOS v4.5.7: Health Schedule Synchronization, OS Native Toast Notifications, AI Prompt Draft Persistence & Conversational Dose Adherence Execution',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
@@ -262,7 +262,7 @@ export class UpdateService {
     }
 
     // Compose final remote manifest
-    const targetVersion = fetchedManifest?.version || current.version || '4.5.6';
+    const targetVersion = fetchedManifest?.version || current.version || '4.5.7';
     const targetCommit =
       latestCommitInfo?.shortSha ||
       fetchedManifest?.gitCommit ||
@@ -270,7 +270,7 @@ export class UpdateService {
 
     const manifest: VersionManifest = {
       version: targetVersion,
-      buildNumber: fetchedManifest?.buildNumber || 7,
+      buildNumber: fetchedManifest?.buildNumber || 8,
       buildTimestamp:
         latestCommitInfo?.date
           ? new Date(latestCommitInfo.date).getTime()
@@ -282,7 +282,7 @@ export class UpdateService {
       releaseNotes:
         latestCommitInfo?.title ||
         fetchedManifest?.releaseNotes ||
-        'PAIOS v4.5.6: Enhanced Android In-App Auto-Update & Real-Time Commit Synchronization',
+        'PAIOS v4.5.7: Health Schedule Synchronization, OS Native Toast Notifications, AI Prompt Draft Persistence & Conversational Dose Adherence Execution',
       platforms: {
         windows: {
           url:

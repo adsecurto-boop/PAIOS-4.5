@@ -1,7 +1,12 @@
-const { app, BrowserWindow, globalShortcut, Menu, ipcMain, dialog, session } = require('electron');
+const { app, BrowserWindow, globalShortcut, Menu, ipcMain, dialog, session, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+
+// Configure Windows App User Model ID for native OS toast notifications & taskbar integration
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.paios.desktop');
+}
 
 let mainWindow;
 
@@ -85,6 +90,7 @@ function createWindow() {
       nodeIntegration: true,
       contextIsolation: false,
       webSecurity: false,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
@@ -220,9 +226,47 @@ function createWindow() {
   });
 }
 
+// IPC Handlers for Desktop Native OS Notifications
+ipcMain.on('show-desktop-notification', (event, data) => {
+  try {
+    const { title, body, message, icon } = data || {};
+    if (Notification && Notification.isSupported && Notification.isSupported()) {
+      const notifIcon = icon || (fs.existsSync(path.join(__dirname, 'dist', 'favicon.ico')) ? path.join(__dirname, 'dist', 'favicon.ico') : undefined);
+      const notif = new Notification({
+        title: title || 'PAIOS Desktop',
+        body: body || message || '',
+        icon: notifIcon,
+      });
+      notif.show();
+    }
+  } catch (err) {
+    console.error('Failed to show desktop notification:', err);
+  }
+});
+
+ipcMain.handle('show-desktop-notification', async (event, data) => {
+  try {
+    const { title, body, message, icon } = data || {};
+    if (Notification && Notification.isSupported && Notification.isSupported()) {
+      const notifIcon = icon || (fs.existsSync(path.join(__dirname, 'dist', 'favicon.ico')) ? path.join(__dirname, 'dist', 'favicon.ico') : undefined);
+      const notif = new Notification({
+        title: title || 'PAIOS Desktop',
+        body: body || message || '',
+        icon: notifIcon,
+      });
+      notif.show();
+      return { success: true };
+    }
+    return { success: false, reason: 'Notification not supported' };
+  } catch (err) {
+    console.error('Failed to show desktop notification:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC Handlers for In-App Live Sync & Auto-Update Controls
 ipcMain.handle('paios:get-version', () => {
-  return app.getVersion() || '4.3.0';
+  return app.getVersion() || '4.5.7';
 });
 
 ipcMain.handle('paios:get-config', () => {
@@ -426,7 +470,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
         fs.cpSync(sourceDistDir, userDistDir, { recursive: true, force: true });
 
         const activeManifest = {
-          version: version || '4.5.6',
+          version: version || '4.5.7',
           gitCommit: gitCommit || 'latest',
           appliedAt: Date.now(),
           sourcePackage: zipToApply,

@@ -697,6 +697,44 @@ export interface PAIOSStorageAdapter {
   setAuthToken(token: string | null): void;
 }
 
+export function timingSlotsToScheduleTimes(slots?: ('Morning' | 'Afternoon' | 'Night')[]): string[] {
+  if (!slots || slots.length === 0) return ['08:00'];
+  const times: string[] = [];
+  if (slots.includes('Morning')) times.push('08:00');
+  if (slots.includes('Afternoon')) times.push('13:00');
+  if (slots.includes('Night')) times.push('21:00');
+  return times.length > 0 ? times : ['08:00'];
+}
+
+export function scheduleTimesToTimingSlots(times?: string[]): ('Morning' | 'Afternoon' | 'Night')[] {
+  if (!times || times.length === 0) return ['Morning'];
+  const slots = new Set<'Morning' | 'Afternoon' | 'Night'>();
+  times.forEach((t) => {
+    let hour = 8;
+    const clean = t.trim().toLowerCase();
+    if (clean.includes('pm') || clean.includes('am')) {
+      const isPm = clean.includes('pm');
+      const num = parseInt(clean.replace(/[^0-9:]/g, '').split(':')[0], 10) || 0;
+      hour = isPm && num < 12 ? num + 12 : !isPm && num === 12 ? 0 : num;
+    } else {
+      hour = parseInt(clean.split(':')[0], 10) || 0;
+    }
+
+    if (hour < 12) {
+      slots.add('Morning');
+    } else if (hour < 17) {
+      slots.add('Afternoon');
+    } else {
+      slots.add('Night');
+    }
+  });
+  const result: ('Morning' | 'Afternoon' | 'Night')[] = [];
+  if (slots.has('Morning')) result.push('Morning');
+  if (slots.has('Afternoon')) result.push('Afternoon');
+  if (slots.has('Night')) result.push('Night');
+  return result.length > 0 ? result : ['Morning'];
+}
+
 // Storage Manager Instance
 export const storage = {
   // --- ADAPTER / LOW-LEVEL CRUD CONTRACT METHODS ---
@@ -1173,6 +1211,28 @@ export const storage = {
       list.unshift(med);
     }
     save(STORAGE_KEYS.MEDICATIONS, list);
+
+    // Sync with Refill Inventory
+    try {
+      const refills = this.getRefillInventories();
+      const refill = refills.find(
+        (r) => r.medicationId === med.id || r.medicationName.toLowerCase().includes(med.genericName.toLowerCase())
+      );
+      if (refill) {
+        const slots = scheduleTimesToTimingSlots(med.scheduleTimes);
+        const dosesPerDay = slots.length || 1;
+        refill.timingSlots = slots;
+        refill.dosesPerDay = dosesPerDay;
+        refill.dailyBurnRate = dosesPerDay;
+        save(STORAGE_KEYS.REFILLS, refills);
+      }
+    } catch (e) {
+      console.warn('[PAIOSStorage] Refill sync on saveMedication failed:', e);
+    }
+
+    // Sync today's dose events
+    this.syncDoseEventsForMedication(med);
+
     return med;
   },
   deleteMedication(id: string): void {
@@ -1185,13 +1245,90 @@ export const storage = {
   saveRefillInventory(refill: RefillInventory): RefillInventory {
     const refills = this.getRefillInventories();
     const idx = refills.findIndex((r) => r.id === refill.id);
+
+    // Auto-calculate daily burn rate based on updated schedule frequency
+    const slots: ('Morning' | 'Afternoon' | 'Night')[] =
+      refill.timingSlots && refill.timingSlots.length > 0
+        ? (refill.timingSlots as ('Morning' | 'Afternoon' | 'Night')[])
+        : ['Morning'];
+    const dosesPerDay = refill.dosesPerDay || slots.length || 1;
+    const updatedRefill: RefillInventory = {
+      ...refill,
+      timingSlots: slots,
+      dosesPerDay,
+      dailyBurnRate: dosesPerDay,
+    };
+
     if (idx >= 0) {
-      refills[idx] = refill;
+      refills[idx] = updatedRefill;
     } else {
-      refills.unshift(refill);
+      refills.unshift(updatedRefill);
     }
     save(STORAGE_KEYS.REFILLS, refills);
-    return refill;
+
+    // Single source of truth: synchronize Medication scheduleTimes & instructions
+    try {
+      const meds = this.getMedications();
+      const med = meds.find(
+        (m) => m.id === updatedRefill.medicationId || updatedRefill.medicationName.toLowerCase().includes(m.genericName.toLowerCase())
+      );
+      if (med) {
+        const newTimes = timingSlotsToScheduleTimes(updatedRefill.timingSlots);
+        med.scheduleTimes = newTimes;
+        save(STORAGE_KEYS.MEDICATIONS, meds);
+        this.syncDoseEventsForMedication(med);
+      }
+    } catch (e) {
+      console.warn('[PAIOSStorage] Medication sync on saveRefillInventory failed:', e);
+    }
+
+    return updatedRefill;
+  },
+  syncDoseEventsForMedication(med: Medication, dateStr?: string): void {
+    try {
+      const date = dateStr || getTodayDateString();
+      const allEvents: Record<string, DoseEvent[]> = load(STORAGE_KEYS.DOSE_EVENTS, {});
+      const todayEvents = allEvents[date] || [];
+
+      const otherMedsEvents = todayEvents.filter((d) => d.medicationId !== med.id);
+      const existingMedEvents = todayEvents.filter((d) => d.medicationId === med.id);
+
+      const updatedMedEvents: DoseEvent[] = [];
+      med.scheduleTimes.forEach((time) => {
+        const cleanTime = time.trim();
+        const existing = existingMedEvents.find((d) => d.scheduledTime === cleanTime);
+        if (existing) {
+          updatedMedEvents.push(existing);
+        } else {
+          updatedMedEvents.push({
+            id: `dose_${med.id}_${date}_${cleanTime.replace(':', '')}`,
+            medicationId: med.id,
+            medicationName: `${med.genericName} ${med.dosageStrength}${med.dosageUnit}`,
+            dosage: `${med.dosageStrength} ${med.dosageUnit}`,
+            scheduledTime: cleanTime,
+            scheduledDateString: date,
+            status: 'SCHEDULED',
+            actualTakenTimeMillis: null,
+            note: null,
+          });
+        }
+      });
+
+      // Retain completed/taken dose records
+      existingMedEvents.forEach((ex) => {
+        if (
+          (ex.status === 'TAKEN' || ex.status === 'TAKEN_LATE' || ex.status === 'SKIPPED') &&
+          !updatedMedEvents.some((u) => u.id === ex.id)
+        ) {
+          updatedMedEvents.push(ex);
+        }
+      });
+
+      allEvents[date] = [...otherMedsEvents, ...updatedMedEvents];
+      save(STORAGE_KEYS.DOSE_EVENTS, allEvents);
+    } catch (err) {
+      console.warn('[PAIOSStorage] syncDoseEventsForMedication failed:', err);
+    }
   },
   deleteRefillInventory(id: string): void {
     const list = this.getRefillInventories().filter((r) => r.id !== id);

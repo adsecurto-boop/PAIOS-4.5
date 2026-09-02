@@ -40,7 +40,7 @@ import {
   DoctorContact,
   Appointment,
 } from '../types';
-import { PAIOSStorage, getTodayDateString } from '../storage';
+import { PAIOSStorage, getTodayDateString, scheduleTimesToTimingSlots } from '../storage';
 
 export function calcRefillStockDetails(refill: RefillInventory, todayStr: string) {
   const purchaseDateStr = refill.purchaseDateString || refill.lastRefillDateString || '2026-08-01';
@@ -765,9 +765,27 @@ NOTICE: Generated automatically by PAIOS for patient-clinician discussion.
                       <strong>Instructions:</strong> {med.instructions}
                     </div>
 
-                    <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800 gap-1.5">
                       <span>Doctor: <strong className="text-slate-200">{med.prescribingDoctor || primaryDoctor.name}</strong></span>
-                      <span className="text-emerald-400 font-medium">Daily: {med.scheduleTimes.join(', ')}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-emerald-400 font-medium">Daily: {med.scheduleTimes.join(', ')}</span>
+                        <div className="flex items-center gap-1">
+                          {scheduleTimesToTimingSlots(med.scheduleTimes).map((slot) => (
+                            <span
+                              key={slot}
+                              className={`px-1.5 py-0.5 text-[10px] rounded font-medium border ${
+                                slot === 'Morning'
+                                  ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                                  : slot === 'Afternoon'
+                                  ? 'bg-sky-500/10 text-sky-300 border-sky-500/30'
+                                  : 'bg-purple-500/10 text-purple-300 border-purple-500/30'
+                              }`}
+                            >
+                              {slot === 'Morning' ? '🌅 Morning' : slot === 'Afternoon' ? '☀️ Afternoon' : '🌙 Night'}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );
