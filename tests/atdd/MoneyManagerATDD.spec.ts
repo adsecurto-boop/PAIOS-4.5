@@ -171,18 +171,128 @@ describe('ATDD: Money Manager Pro Multi-Stream, Dual Ledger & Recovery Engine', 
     expect(PAIOSStorage.getBudgetRecoveryState().status).toBe('ADJUSTED');
   });
 
-  it('generates downloadable CSV and Excel spreadsheets without network egress', () => {
+  it('generates downloadable CSV and Excel spreadsheets with range filtering and zero network egress', () => {
+    const today = getTodayDateString();
     const profile = PAIOSStorage.getBudgetProfile();
+
+    const tx1: ExpenseTransaction = {
+      id: 'tx_old',
+      title: 'Ancient Expense',
+      amount: 50,
+      type: 'OUTFLOW',
+      category: 'MISC',
+      dateString: '2024-01-01',
+      timestampMillis: new Date('2024-01-01').getTime(),
+      isNecessity: false,
+    };
+    const tx2: ExpenseTransaction = {
+      id: 'tx_current',
+      title: 'Current Month Inflow',
+      amount: 500,
+      type: 'INFLOW',
+      category: 'SALARY',
+      dateString: today,
+      timestampMillis: Date.now(),
+      isNecessity: true,
+      provenance: 'AI_EXTRACTED',
+    };
+    PAIOSStorage.saveExpenseTransaction(tx1);
+    PAIOSStorage.saveExpenseTransaction(tx2);
+
     const transactions = PAIOSStorage.getExpenseTransactions();
     const analysis = MoneyManagerPlugin.analyzeBudget(profile, transactions);
 
-    const csvOutput = MoneyManagerPlugin.exportToCSV(transactions, profile.currency);
-    expect(typeof csvOutput).toBe('string');
-    expect(csvOutput.startsWith('Date,Time,Type,Title,Category,Amount')).toBe(true);
+    // 1. Export All
+    const allCsv = MoneyManagerPlugin.exportToCSV(transactions, profile.currency, 'ALL');
+    expect(allCsv).toContain('Ancient Expense');
+    expect(allCsv).toContain('Current Month Inflow');
+    expect(allCsv).toContain('Running Balance');
 
-    const excelOutput = MoneyManagerPlugin.exportToExcel(transactions, profile, analysis);
-    expect(typeof excelOutput).toBe('string');
+    // 2. Export Current Month
+    const currentMonthCsv = MoneyManagerPlugin.exportToCSV(transactions, profile.currency, 'CURRENT_MONTH');
+    expect(currentMonthCsv).not.toContain('Ancient Expense');
+    expect(currentMonthCsv).toContain('Current Month Inflow');
+
+    // 3. Export Excel with range
+    const excelOutput = MoneyManagerPlugin.exportToExcel(transactions, profile, analysis, 'CURRENT_MONTH');
     expect(excelOutput).toContain('<?xml version="1.0"?>');
-    expect(excelOutput).toContain('Worksheet ss:Name="Overview &amp; Wealth Analytics"');
+    expect(excelOutput).toContain('Current Month Inflow');
+    expect(excelOutput).not.toContain('Ancient Expense');
+  });
+
+  it('handles division by zero gracefully and rebalances surplus from discretionary categories', () => {
+    const profile: BudgetProfile = {
+      ...PAIOSStorage.getBudgetProfile(),
+      discretionaryMonthly: 1000,
+      foodMonthly: 200,
+      salaryCycleDay: new Date().getDate(), // Target today as cycle boundary
+    };
+
+    const breachTx: ExpenseTransaction = {
+      id: 'tx_breach_food',
+      title: 'Expensive Catering',
+      amount: 600,
+      type: 'OUTFLOW',
+      category: 'Food',
+      dateString: getTodayDateString(),
+      timestampMillis: Date.now(),
+      isNecessity: true,
+    };
+    PAIOSStorage.saveExpenseTransaction(breachTx);
+
+    const transactions = PAIOSStorage.getExpenseTransactions();
+    const recovery = MoneyManagerPlugin.evaluateLossRecovery(profile, transactions, new Date());
+
+    expect(recovery.daysRemaining).toBeGreaterThanOrEqual(1);
+    expect(recovery.dailyReductionQuota).toBeGreaterThan(0);
+    expect(Number.isFinite(recovery.dailyReductionQuota)).toBe(true);
+
+    // Rebalance from surplus
+    const { updatedProfile, updatedRecovery } = MoneyManagerPlugin.rebalanceFromSurplus(
+      profile,
+      'Entertainment',
+      recovery.overageAmount,
+      recovery
+    );
+
+    expect(updatedRecovery.status).toBe('RESOLVED');
+    expect(updatedRecovery.activeBreach).toBe(false);
+    expect(updatedProfile.foodMonthly).toBe(200 + recovery.overageAmount);
+    expect(updatedProfile.discretionaryMonthly).toBe(1000 - recovery.overageAmount);
+  });
+
+  it('computes multi-timeline variance analytics with correct status chips', () => {
+    const profile: BudgetProfile = {
+      ...PAIOSStorage.getBudgetProfile(),
+      foodMonthly: 500,
+      discretionaryMonthly: 600,
+    };
+
+    const tx: ExpenseTransaction = {
+      id: 'tx_food_normal',
+      title: 'Weekly Groceries',
+      amount: 150,
+      type: 'OUTFLOW',
+      category: 'Food',
+      dateString: getTodayDateString(),
+      timestampMillis: Date.now(),
+      isNecessity: true,
+    };
+    PAIOSStorage.saveExpenseTransaction(tx);
+
+    const timeline = MoneyManagerPlugin.calculatePlannedVsActual(
+      profile,
+      PAIOSStorage.getExpenseTransactions(),
+      new Date()
+    );
+
+    expect(timeline.daily.status).toBeDefined();
+    expect(timeline.weekly.status).toBeDefined();
+    expect(timeline.monthly.categories.length).toBeGreaterThan(0);
+
+    const foodCategory = timeline.monthly.categories.find((c) => c.category === 'Food');
+    expect(foodCategory).toBeDefined();
+    expect(foodCategory?.status).toBe('ON_TRACK');
   });
 });
+

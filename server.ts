@@ -652,6 +652,7 @@ ${userContext || 'No context available.'}
                 amount: { type: 'NUMBER', description: 'Monetary amount' },
                 type: { type: 'STRING', enum: ['INFLOW', 'OUTFLOW'], description: 'Transaction stream' },
                 category: { type: 'STRING', description: 'Budget category e.g. Food, Travel, Salary, Freelance, Health' },
+                notes: { type: 'STRING', description: 'Optional transaction notes or remarks' },
               },
               required: ['title', 'amount'],
             },

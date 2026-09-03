@@ -65,6 +65,9 @@ export const MoneyManagerScreen: React.FC = () => {
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [showAddTransactionModal, setShowAddTransactionModal] = useState(false);
   const [showShiftModal, setShowShiftModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportRange, setExportRange] = useState<'CURRENT_MONTH' | 'LAST_30_DAYS' | 'ALL'>('CURRENT_MONTH');
+  const [exportFormat, setExportFormat] = useState<'CSV' | 'XLSX'>('CSV');
   const [selectedFilterCategory, setSelectedFilterCategory] = useState<string>('ALL');
   const [selectedLedgerType, setSelectedLedgerType] = useState<'ALL' | 'INFLOW' | 'OUTFLOW'>('ALL');
   const [activeTimelineTab, setActiveTimelineTab] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -252,18 +255,31 @@ export const MoneyManagerScreen: React.FC = () => {
   };
 
   // Client-Side CSV & Excel Exports
-  const handleExportCSV = () => {
-    const csvData = MoneyManagerPlugin.exportToCSV(transactions, profile.currency);
-    MoneyManagerPlugin.downloadFile(csvData, `PAIOS_Financial_Ledger_${todayStr}.csv`, 'text/csv;charset=utf-8;');
+  const handleExportCSV = (range: 'CURRENT_MONTH' | 'LAST_30_DAYS' | 'ALL' = exportRange) => {
+    const csvData = MoneyManagerPlugin.exportToCSV(transactions, profile.currency, range);
+    MoneyManagerPlugin.downloadFile(
+      csvData,
+      `PAIOS_Financial_Ledger_${range.toLowerCase()}_${todayStr}.csv`,
+      'text/csv;charset=utf-8;'
+    );
   };
 
-  const handleExportExcel = () => {
-    const excelXml = MoneyManagerPlugin.exportToExcel(transactions, profile, analysis);
+  const handleExportExcel = (range: 'CURRENT_MONTH' | 'LAST_30_DAYS' | 'ALL' = exportRange) => {
+    const excelXml = MoneyManagerPlugin.exportToExcel(transactions, profile, analysis, range);
     MoneyManagerPlugin.downloadFile(
       excelXml,
-      `PAIOS_Wealth_Analytics_${todayStr}.xls`,
+      `PAIOS_Wealth_Analytics_${range.toLowerCase()}_${todayStr}.xls`,
       'application/vnd.ms-excel;charset=utf-8;'
     );
+  };
+
+  const handleExportLedger = () => {
+    if (exportFormat === 'CSV') {
+      handleExportCSV(exportRange);
+    } else {
+      handleExportExcel(exportRange);
+    }
+    setShowExportModal(false);
   };
 
   // Trigger Gemini AI Financial Consultation
@@ -316,7 +332,7 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
       return (
         <span className="text-[10px] font-mono font-bold bg-rose-950 text-rose-300 border border-rose-700/60 px-2 py-0.5 rounded-full flex items-center gap-1">
           <AlertTriangle className="w-3 h-3 text-rose-400" />
-          <span>-{currency}{Math.abs(variance).toFixed(2)} Over Budget</span>
+          <span>Over Budget (-{currency}{Math.abs(variance).toFixed(2)})</span>
         </span>
       );
     }
@@ -324,14 +340,14 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
       return (
         <span className="text-[10px] font-mono font-bold bg-amber-950 text-amber-300 border border-amber-700/60 px-2 py-0.5 rounded-full flex items-center gap-1">
           <AlertCircle className="w-3 h-3 text-amber-400" />
-          <span>{currency}{variance.toFixed(2)} Remaining</span>
+          <span>Approaching Limit (85%+) ({currency}{variance.toFixed(2)} left)</span>
         </span>
       );
     }
     return (
       <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-700/60 px-2 py-0.5 rounded-full flex items-center gap-1">
         <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-        <span>+{currency}{variance.toFixed(2)} Under Budget</span>
+        <span>Within Target (+{currency}{variance.toFixed(2)})</span>
       </span>
     );
   };
@@ -583,7 +599,7 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition-all flex items-center gap-1.5"
               >
                 <Scale className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Shift Category Surplus</span>
+                <span>Rebalance From Surplus</span>
               </button>
 
               {profile.appliedRecoveryAdjustment ? (
@@ -914,24 +930,15 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
             </p>
           </div>
 
-          {/* Export Buttons */}
+          {/* Export Ledger Button */}
           <div className="flex items-center gap-2">
             <button
-              onClick={handleExportCSV}
+              onClick={() => setShowExportModal(true)}
               disabled={transactions.length === 0}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 flex items-center gap-1.5 transition-colors"
+              className="px-3.5 py-2 bg-gradient-to-r from-slate-800 to-indigo-950/80 hover:from-slate-700 hover:to-indigo-900 disabled:opacity-50 text-white text-xs font-bold rounded-xl border border-indigo-500/40 flex items-center gap-1.5 shadow-lg shadow-indigo-900/20 transition-all"
             >
-              <FileText className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Export CSV</span>
-            </button>
-
-            <button
-              onClick={handleExportExcel}
-              disabled={transactions.length === 0}
-              className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 disabled:opacity-50 text-emerald-200 text-xs font-semibold rounded-xl border border-emerald-700/60 flex items-center gap-1.5 transition-colors"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Export Excel</span>
+              <Download className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Export Ledger</span>
             </button>
           </div>
         </div>
@@ -1090,31 +1097,37 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
               </button>
             </div>
 
-            {/* Inflow vs Outflow Pill Toggle */}
-            <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => {
-                  setTxType('OUTFLOW');
-                  setTxCategory('Food');
-                }}
-                className={`py-1.5 rounded-lg transition-all ${
-                  txType === 'OUTFLOW' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                - Outflow (Expense)
-              </button>
+            {/* Inflow vs Outflow Segmented Pill Toggle */}
+            <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => {
                   setTxType('INFLOW');
-                  setTxCategory('Freelance');
+                  setTxCategory('FREELANCE');
                 }}
-                className={`py-1.5 rounded-lg transition-all ${
-                  txType === 'INFLOW' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                  txType === 'INFLOW'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                + Inflow (Income)
+                <ArrowDownLeft className="w-3.5 h-3.5" />
+                <span>+ Log Money Received / Inflow</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTxType('OUTFLOW');
+                  setTxCategory('FOOD');
+                }}
+                className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                  txType === 'OUTFLOW'
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                <span>- Log Expense / Outflow</span>
               </button>
             </div>
 
@@ -1164,26 +1177,24 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
                   >
                     {txType === 'INFLOW' ? (
                       <>
-                        <option value="Freelance">Freelance</option>
-                        <option value="SideCash">Side Cash / Hustle</option>
-                        <option value="Dividends">Dividends / Yield</option>
-                        <option value="Reimbursements">Reimbursements</option>
-                        <option value="Salary">Salary</option>
-                        <option value="Gift">Gift / Bonus</option>
-                        <option value="OtherIncome">Other Income</option>
+                        <option value="SALARY">Salary / Primary Pay</option>
+                        <option value="FREELANCE">Freelance / Consulting</option>
+                        <option value="GIFT">Gift / Bonus</option>
+                        <option value="DIVIDEND">Dividend / Investment Yield</option>
+                        <option value="DAILY_CASH">Daily Cash / Side Hustle</option>
+                        <option value="OTHER_INCOME">Other Income</option>
                       </>
                     ) : (
                       <>
-                        <option value="Food">Food</option>
-                        <option value="Travel">Travel</option>
-                        <option value="Health">Health</option>
-                        <option value="Housing">Housing</option>
-                        <option value="FamilyContribution">Family Support</option>
-                        <option value="LoanClearance">Loan / EMI</option>
-                        <option value="Learning">Learning</option>
-                        <option value="Investing">Investing</option>
-                        <option value="Entertainment">Entertainment</option>
-                        <option value="Other">Other</option>
+                        <option value="FOOD">Food &amp; Groceries</option>
+                        <option value="TRAVEL">Travel, Fuel &amp; Transit</option>
+                        <option value="HEALTH">Health, Meds &amp; Doctor</option>
+                        <option value="HOUSING">Housing, Rent &amp; Utilities</option>
+                        <option value="LOAN_EMI">Loan Clearance / EMI</option>
+                        <option value="FAMILY_SUPPORT">Family Support &amp; Parents</option>
+                        <option value="LEARNING">Learning, Courses &amp; Books</option>
+                        <option value="ENTERTAINMENT">Entertainment &amp; Dining</option>
+                        <option value="MISC">Miscellaneous / Other</option>
                       </>
                     )}
                   </select>
@@ -1229,6 +1240,103 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Client-Side Export Ledger Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+          <div className="bg-slate-900 border border-indigo-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <h3 className="font-heading font-bold text-base text-white flex items-center gap-2">
+                <Download className="w-5 h-5 text-cyan-400" />
+                <span>Export Financial Ledger</span>
+              </h3>
+              <button onClick={() => setShowExportModal(false)} className="text-slate-400 hover:text-white">
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Generate private, RFC 4180 compliant CSV or Excel XLSX spreadsheets directly inside your browser with zero external network egress.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1.5">Date Range</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['CURRENT_MONTH', 'LAST_30_DAYS', 'ALL'] as const).map((rng) => (
+                    <button
+                      key={rng}
+                      type="button"
+                      onClick={() => setExportRange(rng)}
+                      className={`py-2 px-2 text-center rounded-xl text-xs font-semibold transition-all border ${
+                        exportRange === rng
+                          ? 'bg-indigo-600 text-white border-indigo-500 shadow'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      {rng === 'CURRENT_MONTH' ? 'Current Month' : rng === 'LAST_30_DAYS' ? 'Last 30 Days' : 'All Records'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1.5">File Format</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('CSV')}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all border ${
+                      exportFormat === 'CSV'
+                        ? 'bg-cyan-600 text-white border-cyan-500 shadow'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4 text-cyan-300" />
+                    <span>CSV (.csv)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('XLSX')}
+                    className={`py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all border ${
+                      exportFormat === 'XLSX'
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+                    <span>Excel (.xlsx)</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] font-mono text-slate-400 space-y-1">
+                <div>Output Schema: Date, Time, Type, Title, Category, Amount, Running Daily Balance, Notes</div>
+                <div className="text-emerald-400 font-bold">✓ 100% Private local generation (Zero network egress)</div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowExportModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportLedger}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center gap-1.5"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download {exportFormat}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

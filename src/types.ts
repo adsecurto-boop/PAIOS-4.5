@@ -272,6 +272,37 @@ export enum NavTab {
 }
 
 // --- MONEY MANAGER & BUDGET ANALYZER DATA MODELS ---
+export type TransactionType = 'INFLOW' | 'OUTFLOW';
+export type IncomeCategory =
+  | 'SALARY'
+  | 'FREELANCE'
+  | 'GIFT'
+  | 'DIVIDEND'
+  | 'DAILY_CASH'
+  | 'OTHER_INCOME';
+export type ExpenseCategory =
+  | 'FOOD'
+  | 'TRAVEL'
+  | 'HEALTH'
+  | 'HOUSING'
+  | 'LOAN_EMI'
+  | 'FAMILY_SUPPORT'
+  | 'LEARNING'
+  | 'ENTERTAINMENT'
+  | 'MISC';
+
+export interface DailyLedgerEntry {
+  id: string;
+  timestamp: string; // ISO format
+  date: string;      // YYYY-MM-DD
+  type: TransactionType;
+  title: string;
+  amount: number;
+  category: IncomeCategory | ExpenseCategory | BudgetCategory | string;
+  notes?: string;
+  provenance?: 'MANUAL' | 'AI_EXTRACTED' | 'SWEEP';
+}
+
 export type BudgetCategory =
   | 'Food'
   | 'Travel'
@@ -290,12 +321,14 @@ export type BudgetCategory =
   | 'Reimbursements'
   | 'Gift'
   | 'OtherIncome'
-  | 'Other';
+  | 'Other'
+  | IncomeCategory
+  | ExpenseCategory;
 
 export interface VariableIncomeStream {
   id: string;
   name: string;
-  category: 'Freelance' | 'SideCash' | 'Dividends' | 'Reimbursements' | 'Gift' | 'OtherIncome';
+  category: 'Freelance' | 'SideCash' | 'Dividends' | 'Reimbursements' | 'Gift' | 'OtherIncome' | IncomeCategory;
   expectedMonthlyAmount: number;
 }
 
@@ -314,6 +347,10 @@ export interface BudgetProfile {
   debtInterestRate?: number; // Annual debt interest rate % p.a.
   currentInvested?: number; // Current invested portfolio value
   savingsInterestRate?: number; // Annual savings yield rate % p.a.
+  // Target Allocations (e.g. 50/30/20)
+  needsTargetPercent?: number; // Target <= 50%
+  wantsTargetPercent?: number; // Target <= 30%
+  savingsTargetPercent?: number; // Target >= 20%
   // Necessities & Fixed Obligations
   foodMonthly: number;
   travelMonthly: number;
@@ -336,14 +373,15 @@ export interface ExpenseTransaction {
   id: string;
   title: string;
   amount: number;
-  type?: 'INFLOW' | 'OUTFLOW'; // Defaults to 'OUTFLOW' for backwards compatibility
-  category: BudgetCategory | string;
+  type?: TransactionType; // Defaults to 'OUTFLOW' for backwards compatibility
+  category: BudgetCategory | IncomeCategory | ExpenseCategory | string;
   dateString: string; // YYYY-MM-DD
   timeString?: string; // HH:mm
   timestampMillis: number;
   isNecessity: boolean;
   note?: string;
   notes?: string;
+  provenance?: 'MANUAL' | 'AI_EXTRACTED' | 'SWEEP';
 }
 
 export interface DailySurplusRecord {

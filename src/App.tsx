@@ -970,6 +970,7 @@ export const App: React.FC = () => {
           timestampMillis: payload.timestamp || Date.now(),
           isNecessity: Boolean(payload.isNecessity ?? true),
           notes: payload.notes || payload.note || 'AI Tool Execution',
+          provenance: 'AI_EXTRACTED',
         });
       } else if (actionType === 'create_task' || payload.type === 'create_task') {
         PAIOSStorage.addTask(

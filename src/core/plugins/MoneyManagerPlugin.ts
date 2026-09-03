@@ -345,13 +345,43 @@ export class MoneyManagerPlugin {
   }
 
   /**
+   * Filters transactions by range: CURRENT_MONTH, LAST_30_DAYS, or ALL
+   */
+  public static filterTransactionsByRange(
+    transactions: ExpenseTransaction[],
+    range: 'CURRENT_MONTH' | 'LAST_30_DAYS' | 'ALL' = 'ALL',
+    now: Date = new Date()
+  ): ExpenseTransaction[] {
+    if (range === 'ALL') return transactions;
+
+    if (range === 'CURRENT_MONTH') {
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const prefix = `${year}-${month}`;
+      return transactions.filter((t) => t.dateString && t.dateString.startsWith(prefix));
+    }
+
+    if (range === 'LAST_30_DAYS') {
+      const thirtyDaysAgo = now.getTime() - 30 * 86400000;
+      return transactions.filter((t) => {
+        const time = t.timestampMillis || (t.dateString ? new Date(t.dateString).getTime() : 0);
+        return time >= thirtyDaysAgo;
+      });
+    }
+
+    return transactions;
+  }
+
+  /**
    * Generates RFC 4180 compliant CSV ledger export string entirely client-side
    */
   public static exportToCSV(
     transactions: ExpenseTransaction[],
-    currency: string = '$'
+    currency: string = '$',
+    filterRange: 'CURRENT_MONTH' | 'LAST_30_DAYS' | 'ALL' = 'ALL'
   ): string {
-    const sorted = [...transactions].sort((a, b) => a.timestampMillis - b.timestampMillis);
+    const filtered = this.filterTransactionsByRange(transactions, filterRange);
+    const sorted = [...filtered].sort((a, b) => a.timestampMillis - b.timestampMillis);
 
     const headers = [
       'Date',
@@ -401,9 +431,11 @@ export class MoneyManagerPlugin {
   public static exportToExcel(
     transactions: ExpenseTransaction[],
     profile: BudgetProfile,
-    analysis: BudgetAnalysisResult
+    analysis: BudgetAnalysisResult,
+    filterRange: 'CURRENT_MONTH' | 'LAST_30_DAYS' | 'ALL' = 'ALL'
   ): string {
-    const sorted = [...transactions].sort((a, b) => a.timestampMillis - b.timestampMillis);
+    const filtered = this.filterTransactionsByRange(transactions, filterRange);
+    const sorted = [...filtered].sort((a, b) => a.timestampMillis - b.timestampMillis);
     const currency = profile.currency || '$';
 
     let runningBalance = 0;
@@ -769,6 +801,40 @@ export class MoneyManagerPlugin {
     updated.updatedAtMillis = Date.now();
 
     return updated;
+  }
+
+  /**
+   * Rebalances surplus from a discretionary category to absorb an active overage breach
+   */
+  public static rebalanceFromSurplus(
+    profile: BudgetProfile,
+    fromCategory: BudgetCategory = 'Entertainment',
+    overageAmount: number,
+    recovery: BudgetRecoveryState
+  ): {
+    updatedProfile: BudgetProfile;
+    updatedRecovery: BudgetRecoveryState;
+  } {
+    const targetCategory = (recovery.breachedCategory as BudgetCategory) || 'Food';
+    const updatedProfile = this.shiftCategorySurplus(profile, fromCategory, targetCategory, overageAmount);
+    const updatedRecovery: BudgetRecoveryState = {
+      ...recovery,
+      activeBreach: false,
+      overageAmount: 0,
+      dailyReductionQuota: 0,
+      status: 'RESOLVED',
+      shiftedSurplusHistory: [
+        ...(recovery.shiftedSurplusHistory || []),
+        {
+          fromCategory,
+          toCategory: targetCategory,
+          amount: overageAmount,
+          timestampMillis: Date.now(),
+        },
+      ],
+      updatedAtMillis: Date.now(),
+    };
+    return { updatedProfile, updatedRecovery };
   }
 
   /**
