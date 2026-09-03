@@ -1,4 +1,6 @@
 // Global test setup for Vitest
+import 'fake-indexeddb/auto';
+
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'paios-test-secret-jwt-key-2026';
 process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-gemini-server-key-xyz';
@@ -10,3 +12,4 @@ beforeEach(() => {
     window.localStorage.clear();
   }
 });
+

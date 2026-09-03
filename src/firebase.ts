@@ -83,6 +83,10 @@ const STORAGE_KEYS = {
   VITALS: 'paios_vitals_v1',
   DOCTORS: 'paios_doctors_v1',
   APPOINTMENTS: 'paios_appointments_v1',
+  BUDGET_PROFILE: 'paios_budget_profile_v1',
+  EXPENSES: 'paios_expenses_v1',
+  DAILY_SURPLUS: 'paios_daily_surplus_v1',
+  BUDGET_RECOVERY: 'paios_budget_recovery_v1',
 };
 
 let quotaExceededFlag = false;
@@ -513,3 +517,66 @@ export function listenToCloudData(userId: string, onSyncComplete?: () => void): 
 
   return unsub;
 }
+
+// Bidirectional Firestore Sync Vault for Pairing Code sync
+export async function syncLocalToVault(vaultCode: string): Promise<void> {
+  if (isApplyingRemoteUpdate || !vaultCode) return;
+  try {
+    const snapshot = getLocalSnapshot();
+    const normalized = vaultCode.trim().toUpperCase();
+    const vaultRef = doc(db, 'sync_vaults', normalized);
+    lastLocalSaveTime = Date.now();
+    await setDoc(
+      vaultRef,
+      {
+        snapshot,
+        updatedAt: lastLocalSaveTime,
+        vaultCode: normalized,
+      },
+      { merge: true }
+    );
+  } catch (err: any) {
+    console.error('Firestore Vault sync write error:', err);
+  }
+}
+
+export function listenToVaultData(vaultCode: string, onSyncComplete?: () => void): () => void {
+  if (!vaultCode) return () => {};
+  const normalized = vaultCode.trim().toUpperCase();
+  const vaultRef = doc(db, 'sync_vaults', normalized);
+
+  const unsub = onSnapshot(
+    vaultRef,
+    (docSnap) => {
+      if (!docSnap.exists()) {
+        syncLocalToVault(normalized);
+        return;
+      }
+
+      const data = docSnap.data();
+      const remoteUpdatedAt = data?.updatedAt || 0;
+
+      if (data?.snapshot && remoteUpdatedAt > lastRemoteUpdate && remoteUpdatedAt > lastLocalSaveTime) {
+        lastRemoteUpdate = remoteUpdatedAt;
+        isApplyingRemoteUpdate = true;
+        Object.entries(data.snapshot).forEach(([key, val]) => {
+          try {
+            localStorage.setItem(key, JSON.stringify(val));
+          } catch (e) {}
+        });
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('paios_storage_change'));
+        }
+        isApplyingRemoteUpdate = false;
+        if (onSyncComplete) onSyncComplete();
+      }
+    },
+    (err) => {
+      console.warn('Firestore Vault snapshot listener notice:', err);
+    }
+  );
+
+  return unsub;
+}
+

@@ -456,6 +456,17 @@ app.post('/api/ai/chat', requireAuth, async (req, res) => {
       }
     }
 
+    // Pre-processing Prescription Alteration & Double-Dose Interceptor
+    if (/\b(double.*dose|take.*two.*pills|take.*extra.*pill|increase.*dose|decrease.*dose|change.*dosage|stop.*taking.*medication)\b/i.test(cleanUserText)) {
+      const refusalText = `⚠️ MEDICAL SAFETY NOTICE: PAIOS is strictly an organizational decision-support assistant and cannot alter, adjust, or prescribe medication dosages. Never double up on a missed dose. Please consult your prescribing doctor or pharmacist before making any changes to your medication schedule.`;
+      return res.json({
+        reply: refusalText,
+        text: refusalText,
+        actionType: null,
+        actionPayloadJson: null,
+      });
+    }
+
     // Always use server-side process.env.GEMINI_API_KEY (strictly ignore client-supplied keys)
     const apiKey = process.env.GEMINI_API_KEY;
 
@@ -476,6 +487,27 @@ app.post('/api/ai/chat', requireAuth, async (req, res) => {
           timestamp: Date.now(),
         });
         mockReply = `I have marked your scheduled medication dose as taken in your Health Ledger.`;
+      } else if (/\b(spent|spend|paid|received|earned|deposit|expense|income|transaction)\b/i.test(cleanUserText)) {
+        actionType = 'LOG_TRANSACTION';
+        const numMatch = cleanUserText.match(/\d+(\.\d+)?/);
+        const amount = numMatch ? parseFloat(numMatch[0]) : 50;
+        const isInflow = /\b(received|earned|deposit|income|salary)\b/i.test(cleanUserText);
+        actionPayloadJson = JSON.stringify({
+          type: 'log_transaction',
+          flowType: isInflow ? 'INFLOW' : 'OUTFLOW',
+          amount,
+          title: cleanUserText.slice(0, 40),
+          category: isInflow ? 'Salary' : 'Food',
+        });
+        mockReply = `I have logged this ${isInflow ? 'income' : 'expense'} transaction of ${amount} in your Ledger.`;
+      } else if (/\b(create.*task|add.*task|remind.*to)\b/i.test(cleanUserText)) {
+        actionType = 'create_task';
+        actionPayloadJson = JSON.stringify({
+          type: 'create_task',
+          title: cleanUserText.replace(/^(create|add|remind me to)\s+/i, ''),
+          priority: 'NORMAL',
+        });
+        mockReply = `I have added this task to your task list.`;
       }
 
       return res.status(200).json({
@@ -579,11 +611,74 @@ ${userContext || 'No context available.'}
     let usageMetadata: any = null;
     let geminiFunctionCalls: any[] = [];
 
+    const geminiTools: any[] = [
+      {
+        functionDeclarations: [
+          {
+            name: 'record_medication_dose',
+            description: 'Records or updates medication dose adherence status (taken, skipped, or taken late) in the user health ledger.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                medication_ids: {
+                  type: 'ARRAY',
+                  items: { type: 'STRING' },
+                  description: "Array of medication IDs or names, or ['all_due']",
+                },
+                action: {
+                  type: 'STRING',
+                  enum: ['TAKEN', 'SKIPPED', 'TAKEN_LATE'],
+                  description: 'The adherence status for the dose',
+                },
+                timestamp: {
+                  type: 'NUMBER',
+                  description: 'Unix timestamp in milliseconds when dose was taken',
+                },
+                notes: {
+                  type: 'STRING',
+                  description: 'Optional clinical adherence observation or note',
+                },
+              },
+              required: ['action'],
+            },
+          },
+          {
+            name: 'log_transaction',
+            description: 'Records a financial inflow (income/salary) or outflow (expense/spend) into the PAIOS money manager ledger.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                title: { type: 'STRING', description: 'Transaction title or description' },
+                amount: { type: 'NUMBER', description: 'Monetary amount' },
+                type: { type: 'STRING', enum: ['INFLOW', 'OUTFLOW'], description: 'Transaction stream' },
+                category: { type: 'STRING', description: 'Budget category e.g. Food, Travel, Salary, Freelance, Health' },
+              },
+              required: ['title', 'amount'],
+            },
+          },
+          {
+            name: 'create_task',
+            description: 'Creates a new actionable task in the user PAIOS task list.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                title: { type: 'STRING', description: 'Task title' },
+                priority: { type: 'STRING', enum: ['HIGH', 'NORMAL', 'LOW'], description: 'Task priority level' },
+                dueDate: { type: 'STRING', description: 'Due date in YYYY-MM-DD format' },
+              },
+              required: ['title'],
+            },
+          },
+        ],
+      },
+    ];
+
     for (const targetModel of modelCandidates) {
       try {
         const callConfig: any = {
           systemInstruction,
           temperature: 0.7,
+          tools: geminiTools,
         };
 
         if (targetModel === 'gemini-3.1-pro-preview' || mode === 'complex') {
@@ -628,6 +723,8 @@ ${userContext || 'No context available.'}
       else if (actionPayloadJson.includes('START_ACTIVITY')) actionType = 'START_ACTIVITY';
       else if (actionPayloadJson.includes('SAVE_NOTE')) actionType = 'SAVE_NOTE';
       else if (actionPayloadJson.includes('LOG_DOSE') || actionPayloadJson.includes('record_medication_dose')) actionType = 'LOG_DOSE';
+      else if (actionPayloadJson.includes('LOG_TRANSACTION') || actionPayloadJson.includes('log_transaction')) actionType = 'LOG_TRANSACTION';
+      else if (actionPayloadJson.includes('create_task')) actionType = 'create_task';
       else if (actionPayloadJson.includes('LOG_SYMPTOM')) actionType = 'LOG_SYMPTOM';
       else if (actionPayloadJson.includes('BOOK_APPOINTMENT')) actionType = 'BOOK_APPOINTMENT';
     }
@@ -643,6 +740,12 @@ ${userContext || 'No context available.'}
           notes: call.args?.notes || 'Logged via PAIOS AI Tool Execution',
           timestamp: call.args?.timestamp || Date.now(),
         });
+      } else if (call.name === 'log_transaction') {
+        actionType = 'LOG_TRANSACTION';
+        actionPayloadJson = JSON.stringify({ type: 'log_transaction', ...call.args });
+      } else if (call.name === 'create_task') {
+        actionType = 'create_task';
+        actionPayloadJson = JSON.stringify({ type: 'create_task', ...call.args });
       } else if (call.name === 'add_task') {
         actionType = 'ADD_TASK';
         actionPayloadJson = JSON.stringify({ type: 'ADD_TASK', ...call.args });

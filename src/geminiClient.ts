@@ -74,6 +74,36 @@ export async function sendClientGeminiChat(params: {
 }): Promise<AiResponse> {
   const { userText, userContext, customApiKey, role, history, modelName } = params;
 
+  const cleanUserText = (userText || '').trim();
+
+  // Emergency Red-Flag Interceptor
+  const redFlagRegexes = [
+    { category: 'CARDIOVASCULAR', pattern: /\b(chest pain|crushing chest|chest pressure|left arm numb|passed out|syncope)\b/i },
+    { category: 'ANAPHYLAXIS', pattern: /\b(throat closing|swollen lips|swollen tongue|cannot breathe|hives all over)\b/i },
+    { category: 'NEUROLOGICAL', pattern: /\b(slurred speech|face drooping|sudden vision loss|seizure|convulsing)\b/i },
+    { category: 'SEROTONIN_TOXICITY', pattern: /\b(severe tremor|rigid muscles|fever and agitation|serotonin syndrome)\b/i },
+    { category: 'PSYCHIATRIC_CRISIS', pattern: /\b(want to end my life|suicidal thoughts|plan to harm myself)\b/i },
+  ];
+
+  for (const flag of redFlagRegexes) {
+    if (flag.pattern.test(cleanUserText)) {
+      return {
+        text: `🚨 EMERGENCY MEDICAL ALERT (${flag.category}): The symptoms you described may indicate a medical emergency. Please call emergency services (911 or 112) or go to the nearest emergency room immediately. PAIOS cannot provide emergency treatment.`,
+        actionType: null,
+        actionPayloadJson: null,
+      };
+    }
+  }
+
+  // Prescription Alteration & Double-Dose Interceptor
+  if (/\b(double.*dose|take.*two.*pills|take.*extra.*pill|increase.*dose|decrease.*dose|change.*dosage|stop.*taking.*medication)\b/i.test(cleanUserText)) {
+    return {
+      text: `⚠️ MEDICAL SAFETY NOTICE: PAIOS is strictly an organizational decision-support assistant and cannot alter, adjust, or prescribe medication dosages. Never double up on a missed dose. Please consult your prescribing doctor or pharmacist before making any changes to your medication schedule.`,
+      actionType: null,
+      actionPayloadJson: null,
+    };
+  }
+
   // Check for client-side environment variable or user-provided key in Settings
   const apiKey = getEffectiveApiKey(customApiKey);
 
@@ -192,6 +222,8 @@ ${userContext || 'No context available.'}
       else if (actionPayloadJson.includes('START_ACTIVITY')) actionType = 'START_ACTIVITY';
       else if (actionPayloadJson.includes('SAVE_NOTE')) actionType = 'SAVE_NOTE';
       else if (actionPayloadJson.includes('LOG_DOSE') || actionPayloadJson.includes('record_medication_dose')) actionType = 'LOG_DOSE';
+      else if (actionPayloadJson.includes('LOG_TRANSACTION') || actionPayloadJson.includes('log_transaction')) actionType = 'LOG_TRANSACTION';
+      else if (actionPayloadJson.includes('create_task')) actionType = 'create_task';
       else if (actionPayloadJson.includes('LOG_SYMPTOM')) actionType = 'LOG_SYMPTOM';
       else if (actionPayloadJson.includes('BOOK_APPOINTMENT')) actionType = 'BOOK_APPOINTMENT';
     }

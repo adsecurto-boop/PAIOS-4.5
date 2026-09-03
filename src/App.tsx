@@ -954,6 +954,30 @@ export const App: React.FC = () => {
           status: 'SCHEDULED',
           notes: payload.notes || 'Booked via PAIOS AI Assistant',
         });
+      } else if (
+        actionType === 'LOG_TRANSACTION' ||
+        payload.type === 'LOG_TRANSACTION' ||
+        actionType === 'log_transaction' ||
+        payload.type === 'log_transaction'
+      ) {
+        PAIOSStorage.saveExpenseTransaction({
+          id: `tx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          title: payload.title || payload.description || 'Logged via AI',
+          amount: Number(payload.amount) || 0,
+          type: (payload.type === 'INFLOW' || payload.flowType === 'INFLOW') ? 'INFLOW' : 'OUTFLOW',
+          category: payload.category || 'Other',
+          dateString: payload.dateString || getTodayDateString(),
+          timestampMillis: payload.timestamp || Date.now(),
+          isNecessity: Boolean(payload.isNecessity ?? true),
+          notes: payload.notes || payload.note || 'AI Tool Execution',
+        });
+      } else if (actionType === 'create_task' || payload.type === 'create_task') {
+        PAIOSStorage.addTask(
+          payload.title || 'AI Generated Task',
+          payload.category || 'Work',
+          payload.priority === 'HIGH' || payload.priority === 'CRITICAL',
+          payload.description || 'Added via PAIOS AI Tool'
+        );
       }
       reloadState();
     } catch (e) {

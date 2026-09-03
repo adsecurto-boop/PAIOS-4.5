@@ -28,6 +28,12 @@ import {
 import { DEFAULT_BUDGET_PROFILE } from './core/plugins/MoneyManagerPlugin';
 import { ConflictResolver } from './core/sync/ConflictResolver';
 import { OfflineSyncManager } from './core/sync/OfflineSyncManager';
+import { paiosDb, migrateLocalStorageToDexie } from './core/db';
+
+if (typeof window !== 'undefined') {
+  migrateLocalStorageToDexie().catch((err) => console.warn('[PAIOSStorage] Dexie migration notice:', err));
+}
+
 
 const STORAGE_KEYS = {
   TASKS: 'paios_tasks_v1',
@@ -606,6 +612,36 @@ function save<T>(key: string, value: T): void {
     window.dispatchEvent(new CustomEvent('paios_cache_updated', { detail: { key, timestamp: now } }));
   }
 
+  // 4b. Non-blocking asynchronous persistence into Dexie.js (IndexedDB)
+  try {
+    if (key === STORAGE_KEYS.TASKS && Array.isArray(value)) {
+      paiosDb.tasks.clear().then(() => paiosDb.tasks.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.MEDICATIONS && Array.isArray(value)) {
+      paiosDb.medications.clear().then(() => paiosDb.medications.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.DOSE_EVENTS && Array.isArray(value)) {
+      paiosDb.doseEvents.clear().then(() => paiosDb.doseEvents.bulkPut(value)).catch(() => {});
+    } else if ((key === STORAGE_KEYS.EXPENSES || key === 'paios_expense_transactions_v1') && Array.isArray(value)) {
+      paiosDb.transactions.clear().then(() => paiosDb.transactions.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.REFILLS && Array.isArray(value)) {
+      paiosDb.refillInventories.clear().then(() => paiosDb.refillInventories.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.TIMELINE && Array.isArray(value)) {
+      paiosDb.timeline.clear().then(() => paiosDb.timeline.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.STUDY_CARDS && Array.isArray(value)) {
+      paiosDb.studyCards.clear().then(() => paiosDb.studyCards.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.VITALS && Array.isArray(value)) {
+      paiosDb.vitals.clear().then(() => paiosDb.vitals.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.DOCTORS && Array.isArray(value)) {
+      paiosDb.doctors.clear().then(() => paiosDb.doctors.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.APPOINTMENTS && Array.isArray(value)) {
+      paiosDb.appointments.clear().then(() => paiosDb.appointments.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.CAPTURES && Array.isArray(value)) {
+      paiosDb.captures.clear().then(() => paiosDb.captures.bulkPut(value)).catch(() => {});
+    }
+    paiosDb.vaultSync.put({ key, payload: value, updatedAt: now }).catch(() => {});
+  } catch (dexieErr) {
+    // Non-blocking in headless / memory-only contexts
+  }
+
   // 5. Non-blocking background sync push if authenticated session exists
   if (ConflictResolver.isApplyingRemoteUpdate() || OfflineSyncManager.isRemoteLockActive()) {
     return;
@@ -670,7 +706,16 @@ function remove(key: string): void {
       return;
     }
 
+    try {
+      if (key === STORAGE_KEYS.TASKS) paiosDb.tasks.clear().catch(() => {});
+      else if (key === STORAGE_KEYS.MEDICATIONS) paiosDb.medications.clear().catch(() => {});
+      else if (key === STORAGE_KEYS.DOSE_EVENTS) paiosDb.doseEvents.clear().catch(() => {});
+      else if (key === STORAGE_KEYS.EXPENSES) paiosDb.transactions.clear().catch(() => {});
+      paiosDb.vaultSync.delete(key).catch(() => {});
+    } catch (e) {}
+
     const token = getAuthToken();
+
     if (
       token &&
       key !== PENDING_SYNC_KEY &&
@@ -777,6 +822,64 @@ export const storage = {
   },
   setAuthToken(token: string | null): void {
     setAuthToken(token);
+  },
+  subscribe(callback: () => void): () => void {
+    if (typeof window === 'undefined') return () => {};
+    const handler = () => callback();
+    window.addEventListener('paios_storage_change', handler);
+    const dexieUnsub = paiosDb.subscribe(callback);
+    return () => {
+      window.removeEventListener('paios_storage_change', handler);
+      dexieUnsub();
+    };
+  },
+  getDexieDb() {
+    return paiosDb;
+  },
+  async hydrateFromDexie(): Promise<boolean> {
+    try {
+      const taskCount = await paiosDb.tasks.count();
+      if (taskCount > 0) {
+        const tasks = await paiosDb.tasks.toArray();
+        memoryCache.set(STORAGE_KEYS.TASKS, { value: tasks, timestamp: Date.now() });
+        if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
+      }
+      const medCount = await paiosDb.medications.count();
+      if (medCount > 0) {
+        const meds = await paiosDb.medications.toArray();
+        memoryCache.set(STORAGE_KEYS.MEDICATIONS, { value: meds, timestamp: Date.now() });
+        if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEYS.MEDICATIONS, JSON.stringify(meds));
+      }
+      const doseCount = await paiosDb.doseEvents.count();
+      if (doseCount > 0) {
+        const doses = await paiosDb.doseEvents.toArray();
+        memoryCache.set(STORAGE_KEYS.DOSE_EVENTS, { value: doses, timestamp: Date.now() });
+        if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEYS.DOSE_EVENTS, JSON.stringify(doses));
+      }
+      const txCount = await paiosDb.transactions.count();
+      if (txCount > 0) {
+        const txs = await paiosDb.transactions.toArray();
+        memoryCache.set(STORAGE_KEYS.EXPENSES, { value: txs, timestamp: Date.now() });
+        if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(txs));
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+  async syncToDexie(): Promise<void> {
+    try {
+      const tasks = this.getTasks();
+      if (tasks.length > 0) await paiosDb.tasks.bulkPut(tasks);
+      const meds = this.getMedications();
+      if (meds.length > 0) await paiosDb.medications.bulkPut(meds);
+      const doses = this.getDoseEvents();
+      if (doses.length > 0) await paiosDb.doseEvents.bulkPut(doses);
+      const txs = this.getExpenseTransactions();
+      if (txs.length > 0) await paiosDb.transactions.bulkPut(txs);
+    } catch (e) {
+      console.warn('[PAIOSStorage] syncToDexie notice:', e);
+    }
   },
   // --- SETTINGS ---
   getSettings(): UserSettings {
