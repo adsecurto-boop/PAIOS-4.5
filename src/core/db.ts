@@ -14,6 +14,8 @@ import {
   DoctorContact,
   Appointment,
   QuickCapture,
+  SavingsPot,
+  PotAllocationRecord,
 } from '../types';
 
 export interface VaultSyncRecord {
@@ -38,6 +40,8 @@ export class PaiosDexieDB extends Dexie {
   appointments!: Table<Appointment, string>;
   captures!: Table<QuickCapture, number>;
   vaultSync!: Table<VaultSyncRecord, string>;
+  savingsPots!: Table<SavingsPot, string>;
+  potAllocations!: Table<PotAllocationRecord, string>;
 
   private mutationListeners: Set<() => void> = new Set();
 
@@ -60,6 +64,11 @@ export class PaiosDexieDB extends Dexie {
       appointments: 'id, doctorId, scheduledDateString, status',
       captures: 'id, category, createdAtMillis',
       vaultSync: 'key, updatedAt',
+    });
+
+    this.version(2).stores({
+      savingsPots: 'id, title, isCompleted, createdAt',
+      potAllocations: 'id, potId, date, source, timestamp',
     });
 
     if (typeof window !== 'undefined') {
@@ -203,6 +212,28 @@ export async function migrateLocalStorageToDexie(): Promise<void> {
         const appts: Appointment[] = JSON.parse(rawAppts);
         if (Array.isArray(appts) && appts.length > 0) {
           await paiosDb.appointments.bulkPut(appts);
+        }
+      }
+    }
+
+    const potCount = await paiosDb.savingsPots.count();
+    if (potCount === 0) {
+      const rawPots = localStorage.getItem('paios_savings_pots_v1');
+      if (rawPots) {
+        const pots: SavingsPot[] = JSON.parse(rawPots);
+        if (Array.isArray(pots) && pots.length > 0) {
+          await paiosDb.savingsPots.bulkPut(pots);
+        }
+      }
+    }
+
+    const allocCount = await paiosDb.potAllocations.count();
+    if (allocCount === 0) {
+      const rawAllocs = localStorage.getItem('paios_pot_allocations_v1');
+      if (rawAllocs) {
+        const allocs: PotAllocationRecord[] = JSON.parse(rawAllocs);
+        if (Array.isArray(allocs) && allocs.length > 0) {
+          await paiosDb.potAllocations.bulkPut(allocs);
         }
       }
     }

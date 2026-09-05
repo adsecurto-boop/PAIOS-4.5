@@ -10,6 +10,8 @@ import {
   PlannedVsActualCategory,
   BudgetRecoveryState,
   VarianceStatus,
+  SavingsPot,
+  PotAllocationRecord,
 } from '../../types';
 import { PreContextBroker } from '../broker/PreContextBroker';
 
@@ -1174,4 +1176,295 @@ export class MoneyManagerPlugin {
       console.warn('[MoneyManagerPlugin] PIT telemetry staging deferred:', e);
     }
   }
+
+  /**
+   * Calculates fill percentage, remaining amount, and completion status for a savings pot.
+   */
+  public static calculatePotProgress(
+    currentAmount: number,
+    targetAmount: number
+  ): {
+    fillPercentage: number;
+    remainingAmount: number;
+    isCompleted: boolean;
+  } {
+    if (targetAmount <= 0) {
+      return {
+        fillPercentage: 0,
+        remainingAmount: 0,
+        isCompleted: false,
+      };
+    }
+
+    const fillPercentage = Math.min(100, Math.round((currentAmount / targetAmount) * 100));
+    const remainingAmount = Math.max(0, targetAmount - currentAmount);
+    const isCompleted = currentAmount >= targetAmount;
+
+    return {
+      fillPercentage,
+      remainingAmount,
+      isCompleted,
+    };
+  }
+
+  /**
+   * Identifies reached milestone thresholds (25%, 50%, 75%, 100%) and current liquid tier.
+   */
+  public static getPotMilestones(
+    currentAmount: number,
+    targetAmount: number
+  ): {
+    milestones: Array<{ pct: number; label: string; reached: boolean }>;
+    currentTier: 0 | 25 | 50 | 75 | 100;
+    fillPercentage: number;
+    reached25: boolean;
+    reached50: boolean;
+    reached75: boolean;
+    reached100: boolean;
+    highestMilestone: number;
+  } {
+    const rawPct = targetAmount > 0 ? (currentAmount / targetAmount) * 100 : 0;
+    const fillPercentage = Math.min(100, Math.round(rawPct));
+
+    const milestones = [
+      { pct: 25, label: 'Quarterway (25%)', reached: fillPercentage >= 25 },
+      { pct: 50, label: 'Halfway Mark (50%)', reached: fillPercentage >= 50 },
+      { pct: 75, label: 'Three-Quarter (75%)', reached: fillPercentage >= 75 },
+      { pct: 100, label: 'Goal Achieved (100%)', reached: fillPercentage >= 100 },
+    ];
+
+    let currentTier: 0 | 25 | 50 | 75 | 100 = 0;
+    if (fillPercentage >= 100) currentTier = 100;
+    else if (fillPercentage >= 75) currentTier = 75;
+    else if (fillPercentage >= 50) currentTier = 50;
+    else if (fillPercentage >= 25) currentTier = 25;
+
+    return {
+      milestones,
+      currentTier,
+      fillPercentage,
+      reached25: fillPercentage >= 25,
+      reached50: fillPercentage >= 50,
+      reached75: fillPercentage >= 75,
+      reached100: fillPercentage >= 100,
+      highestMilestone: currentTier,
+    };
+  }
+
+  /**
+   * Calculates the savings setback in days caused by an impulse or emergency withdrawal.
+   */
+  public static calculateWithdrawalSetbackDays(
+    withdrawalAmount: number,
+    averageDailySurplus: number = 0,
+    dailySafeBudget: number = 0
+  ): number {
+    if (withdrawalAmount <= 0) return 0;
+    // Estimated daily savings pace: prefer historical average daily surplus; fallback to daily safe budget
+    const dailyPace =
+      averageDailySurplus > 0
+        ? averageDailySurplus
+        : dailySafeBudget > 0
+        ? dailySafeBudget
+        : 100;
+
+    return Math.max(1, Math.ceil(withdrawalAmount / dailyPace));
+  }
+
+  /**
+   * Calculates clean overflow redirection when a deposit exceeds target capacity.
+   */
+  public static cascadeOverflowAllocation(
+    pots: SavingsPot[],
+    targetPotId: string,
+    amount: number
+  ): {
+    allocations: Array<{ potId: string; amount: number; isOverflow?: boolean }>;
+    overflowRouted?: {
+      fromPotId: string;
+      fromPotTitle: string;
+      toPotId: string;
+      toPotTitle: string;
+      amount: number;
+    };
+    primaryAllocation: number;
+    overflowAmount: number;
+    overflowTargetId?: string;
+    updatedPots: SavingsPot[];
+  } {
+    const targetPot = pots.find((p) => p.id === targetPotId);
+    if (!targetPot || amount <= 0) {
+      return {
+        allocations: [],
+        primaryAllocation: 0,
+        overflowAmount: 0,
+        updatedPots: [...pots],
+      };
+    }
+
+    const remainingCapacity = Math.max(0, targetPot.targetAmount - targetPot.currentAmount);
+
+    // If fits completely or target capacity is unlimited / zero
+    if (amount <= remainingCapacity || remainingCapacity <= 0) {
+      const allocations = [{ potId: targetPotId, amount, isOverflow: false }];
+      const updatedPots = pots.map((p) => {
+        if (p.id !== targetPotId) return { ...p };
+        const newAmt = p.currentAmount + amount;
+        return {
+          ...p,
+          currentAmount: newAmt,
+          isCompleted: newAmt >= p.targetAmount,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+
+      return {
+        allocations,
+        primaryAllocation: amount,
+        overflowAmount: 0,
+        updatedPots,
+      };
+    }
+
+    // Amount exceeds remaining capacity: cap target pot and route overflow
+    const fitsInTarget = Math.round(remainingCapacity * 100) / 100;
+    const overflow = Math.round((amount - fitsInTarget) * 100) / 100;
+
+    // Determine overflow destination
+    let destPot: SavingsPot | undefined;
+    if (targetPot.autoOverflowTargetId) {
+      destPot = pots.find((p) => p.id === targetPot.autoOverflowTargetId && p.id !== targetPotId);
+    }
+
+    if (!destPot) {
+      // Fallback 1: Priority jar that is incomplete
+      destPot = pots.find((p) => p.isPriorityJar && p.id !== targetPotId && !p.isCompleted);
+    }
+
+    if (!destPot) {
+      // Fallback 2: Any incomplete pot
+      destPot = pots.find((p) => !p.isCompleted && p.id !== targetPotId);
+    }
+
+    if (destPot && overflow > 0) {
+      const allocations = [
+        { potId: targetPotId, amount: fitsInTarget, isOverflow: false },
+        { potId: destPot.id, amount: overflow, isOverflow: true },
+      ];
+
+      const updatedPots = pots.map((p) => {
+        if (p.id === targetPotId) {
+          return {
+            ...p,
+            currentAmount: p.targetAmount,
+            isCompleted: true,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        if (p.id === destPot!.id) {
+          const newAmt = p.currentAmount + overflow;
+          return {
+            ...p,
+            currentAmount: newAmt,
+            isCompleted: newAmt >= p.targetAmount,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return { ...p };
+      });
+
+      return {
+        allocations,
+        overflowRouted: {
+          fromPotId: targetPot.id,
+          fromPotTitle: targetPot.title,
+          toPotId: destPot.id,
+          toPotTitle: destPot.title,
+          amount: overflow,
+        },
+        primaryAllocation: fitsInTarget,
+        overflowAmount: overflow,
+        overflowTargetId: destPot.id,
+        updatedPots,
+      };
+    }
+
+    // If no destination pot exists, overfill target pot
+    const allocations = [{ potId: targetPotId, amount, isOverflow: false }];
+    const updatedPots = pots.map((p) => {
+      if (p.id !== targetPotId) return { ...p };
+      const newAmt = p.currentAmount + amount;
+      return {
+        ...p,
+        currentAmount: newAmt,
+        isCompleted: newAmt >= p.targetAmount,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    return {
+      allocations,
+      primaryAllocation: amount,
+      overflowAmount: 0,
+      updatedPots,
+    };
+  }
+
+  /**
+   * Computes clean leftover surplus distribution across savings pots.
+   * Supports 'EVEN', 'PRIORITY', and 'PRIORITY_FIRST' strategies.
+   */
+  public static distributeLeftoverSweep(
+    availableSurplus: number,
+    pots: SavingsPot[],
+    strategy: 'EVEN' | 'PRIORITY' | 'PRIORITY_FIRST' = 'EVEN'
+  ): Array<{ potId: string; amount: number; allocatedAmount: number; isOverflow?: boolean }> {
+    if (availableSurplus <= 0 || pots.length === 0) {
+      return [];
+    }
+
+    // PRIORITY_FIRST strategy: Focuses 100% on the active priority jar, with automated overflow cascading
+    if (strategy === 'PRIORITY_FIRST') {
+      const priorityPot =
+        pots.find((p) => p.isPriorityJar && !p.isCompleted) ||
+        pots.find((p) => p.isPriorityJar) ||
+        pots.find((p) => !p.isCompleted) ||
+        pots[0];
+
+      const cascadeResult = this.cascadeOverflowAllocation(pots, priorityPot.id, availableSurplus);
+      return cascadeResult.allocations.map((a) => ({
+        ...a,
+        allocatedAmount: a.amount,
+      }));
+    }
+
+    // Prefer uncompleted pots; if all completed, allow allocating to all pots
+    const activeCandidates = pots.filter((p) => !p.isCompleted);
+    const targetPots = activeCandidates.length > 0 ? activeCandidates : pots;
+
+    if (strategy === 'EVEN') {
+      const count = targetPots.length;
+      const basePerPot = Math.floor((availableSurplus / count) * 100) / 100;
+      const allocatedTotal = Math.round(basePerPot * count * 100) / 100;
+      const remainder = Math.round((availableSurplus - allocatedTotal) * 100) / 100;
+
+      return targetPots.map((pot, idx) => {
+        // Remainder cent goes to the first pot
+        const amount = idx === 0 ? Math.round((basePerPot + remainder) * 100) / 100 : basePerPot;
+        return { potId: pot.id, amount, allocatedAmount: amount };
+      });
+    }
+
+    // PRIORITY strategy: Sort by lowest progress (or nearest to completion), allocate full surplus to top priority
+    const sorted = [...targetPots].sort((a, b) => {
+      const progA = a.targetAmount > 0 ? a.currentAmount / a.targetAmount : 1;
+      const progB = b.targetAmount > 0 ? b.currentAmount / b.targetAmount : 1;
+      return progA - progB;
+    });
+
+    const topPot = sorted[0];
+    const amount = Math.round(availableSurplus * 100) / 100;
+    return [{ potId: topPot.id, amount, allocatedAmount: amount }];
+  }
 }
+

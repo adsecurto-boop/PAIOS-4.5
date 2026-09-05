@@ -32,6 +32,8 @@ import {
   BarChart3,
   Scale,
   RotateCcw,
+  Waves,
+  Target,
 } from 'lucide-react';
 import {
   BudgetProfile,
@@ -40,6 +42,9 @@ import {
   BudgetCategory,
   BudgetRecoveryState,
   VarianceStatus,
+  SavingsPot,
+  PotAllocationRecord,
+  WithdrawalReasonCategory,
 } from '../../types';
 import {
   MoneyManagerPlugin,
@@ -48,6 +53,10 @@ import {
 import { PAIOSStorage, getTodayDateString } from '../../storage';
 import { BudgetSetupModal } from './BudgetSetupModal';
 import { ProjectedGrowthChart } from './ProjectedGrowthChart';
+import { SavingsPotCard } from './SavingsPotCard';
+import { DailySweepPourModal } from './DailySweepPourModal';
+import { AddEditPotModal } from './AddEditPotModal';
+import { PotDepositWithdrawModal } from './PotDepositWithdrawModal';
 import { sendClientGeminiChat } from '../../geminiClient';
 
 export const MoneyManagerScreen: React.FC = () => {
@@ -61,6 +70,12 @@ export const MoneyManagerScreen: React.FC = () => {
   const [recoveryState, setRecoveryState] = useState<BudgetRecoveryState>(() =>
     PAIOSStorage.getBudgetRecoveryState()
   );
+  const [pots, setPots] = useState<SavingsPot[]>(() => PAIOSStorage.getSavingsPots());
+  const [selectedPotForAction, setSelectedPotForAction] = useState<SavingsPot | null>(null);
+  const [actionModalMode, setActionModalMode] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
+  const [showAddEditPotModal, setShowAddEditPotModal] = useState(false);
+  const [editingPot, setEditingPot] = useState<SavingsPot | null>(null);
+  const [showSweepPourModal, setShowSweepPourModal] = useState(false);
 
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [showAddTransactionModal, setShowAddTransactionModal] = useState(false);
@@ -109,10 +124,77 @@ export const MoneyManagerScreen: React.FC = () => {
       setTransactions(PAIOSStorage.getExpenseTransactions());
       setSurpluses(PAIOSStorage.getDailySurpluses());
       setRecoveryState(PAIOSStorage.getBudgetRecoveryState());
+      setPots(PAIOSStorage.getSavingsPots());
     };
     window.addEventListener('paios_storage_change', handleStorageChange);
     return () => window.removeEventListener('paios_storage_change', handleStorageChange);
   }, []);
+
+  // Target Savings Pots Computed Stats
+  const totalInPots = pots.reduce((sum, p) => sum + p.currentAmount, 0);
+  const completedPotsCount = pots.filter((p) => p.isCompleted).length;
+
+  const handleOpenAddPot = () => {
+    setEditingPot(null);
+    setShowAddEditPotModal(true);
+  };
+
+  const handleEditPot = (pot: SavingsPot) => {
+    setEditingPot(pot);
+    setShowAddEditPotModal(true);
+  };
+
+  const handleSavePot = (pot: SavingsPot) => {
+    PAIOSStorage.saveSavingsPot(pot);
+    setPots(PAIOSStorage.getSavingsPots());
+  };
+
+  const handleDeletePot = (potId: string) => {
+    PAIOSStorage.deleteSavingsPot(potId);
+    setPots(PAIOSStorage.getSavingsPots());
+  };
+
+  const handleOpenAddMoneyToPot = (pot: SavingsPot) => {
+    setSelectedPotForAction(pot);
+    setActionModalMode('DEPOSIT');
+  };
+
+  const handleOpenWithdrawFromPot = (pot: SavingsPot) => {
+    setSelectedPotForAction(pot);
+    setActionModalMode('WITHDRAW');
+  };
+
+  const handleConfirmPotAction = (
+    potId: string,
+    amount: number,
+    mode: 'DEPOSIT' | 'WITHDRAW',
+    source?: 'MANUAL_DEPOSIT' | 'WINDFALL',
+    reasonCategory?: WithdrawalReasonCategory,
+    notes?: string
+  ) => {
+    if (mode === 'DEPOSIT') {
+      PAIOSStorage.allocateToPot(potId, amount, source || 'MANUAL_DEPOSIT', notes);
+      // Transfer money from liquid checking balance into savings pot
+      const updatedProfile: BudgetProfile = {
+        ...profile,
+        currentBalance: Math.max(0, (profile.currentBalance || 0) - amount),
+        currentSaved: (profile.currentSaved || 0) + amount,
+        updatedAtMillis: Date.now(),
+      };
+      PAIOSStorage.saveBudgetProfile(updatedProfile);
+      setProfile(updatedProfile);
+    } else {
+      PAIOSStorage.withdrawFromPot(potId, amount, notes, reasonCategory);
+      setProfile(PAIOSStorage.getBudgetProfile());
+    }
+    setPots(PAIOSStorage.getSavingsPots());
+  };
+
+  const handleSweepSuccess = () => {
+    setPots(PAIOSStorage.getSavingsPots());
+    setSurpluses(PAIOSStorage.getDailySurpluses());
+    setProfile(PAIOSStorage.getBudgetProfile());
+  };
 
   // Staging telemetry to PIT for AI agent
   useEffect(() => {
@@ -854,13 +936,130 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
         </div>
 
         <button
-          onClick={handleSweepDailySurplus}
+          onClick={() => {
+            if (pots.length > 0) {
+              setShowSweepPourModal(true);
+            } else {
+              handleSweepDailySurplus();
+            }
+          }}
           disabled={isTodayAlreadySwept || todaySurplusInfo.surplusAmount <= 0}
           className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all shrink-0 flex items-center gap-2"
         >
           <Sparkles className="w-4 h-4 text-amber-300" />
-          <span>{isTodayAlreadySwept ? 'Swept to Savings Vault' : 'Sweep Remaining to Savings'}</span>
+          <span>{isTodayAlreadySwept ? 'Swept to Savings Vault' : 'Sweep & Pour to Savings'}</span>
         </button>
+      </div>
+
+      {/* Target Savings Pots & Liquid Jars (Water Fill Metaphor) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
+              <Waves className="w-7 h-7 text-cyan-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-heading font-bold text-base text-white">
+                  Target Savings Pots &amp; Liquid Jars
+                </h3>
+                <span className="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-2.5 py-0.5 rounded-full font-bold">
+                  {completedPotsCount}/{pots.length} Completed
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Gamified sinking funds with animated water fill levels and daily leftover sweeps.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs font-mono">
+              <span className="text-slate-400">Total in Jars: </span>
+              <strong className="text-cyan-400 font-bold">
+                {profile.currency}{totalInPots.toLocaleString()}
+              </strong>
+            </div>
+
+            <button
+              onClick={handleOpenAddPot}
+              disabled={pots.length >= 8}
+              className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/30 transition-all flex items-center gap-1.5"
+              title={pots.length >= 8 ? 'Limit 8 pots to maintain financial clarity' : 'Create new pot'}
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Pot</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 1-Click Midnight Pour Banner */}
+        {!isTodayAlreadySwept && todaySurplusInfo.surplusAmount > 0 && pots.length > 0 && (
+          <div className="p-4 bg-gradient-to-r from-cyan-950/80 via-slate-900 to-indigo-950/80 border border-cyan-500/40 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                <Sparkles className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>End-of-Day Leftover Detected!</span>
+                  <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-700/60 px-2 py-0.5 rounded-full font-mono">
+                    +{profile.currency}{todaySurplusInfo.surplusAmount.toFixed(2)}
+                  </span>
+                </p>
+                <p className="text-xs text-slate-300">
+                  You have <strong className="text-cyan-400 font-mono">{profile.currency}{todaySurplusInfo.surplusAmount.toFixed(2)}</strong> unspent today. Pour it into your savings pots?
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowSweepPourModal(true)}
+              className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/30 transition-all flex items-center gap-1.5 shrink-0"
+            >
+              <Waves className="w-4 h-4" />
+              <span>1-Click Midnight Pour</span>
+            </button>
+          </div>
+        )}
+
+        {/* Pots Grid */}
+        {pots.length === 0 ? (
+          <div className="p-8 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+            <Target className="w-10 h-10 text-cyan-400 mx-auto opacity-70" />
+            <h4 className="text-sm font-bold text-white">No Savings Pots Yet</h4>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+              Create your first target jar (e.g., PC build, bike fund, exam certification) and watch it fill like water!
+            </p>
+            <button
+              onClick={handleOpenAddPot}
+              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/30 inline-flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create First Pot</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {pots.map((pot) => (
+              <SavingsPotCard
+                key={pot.id}
+                pot={pot}
+                currency={profile.currency}
+                onAddMoney={handleOpenAddMoneyToPot}
+                onWithdraw={handleOpenWithdrawFromPot}
+                onEdit={handleEditPot}
+                onDelete={handleDeletePot}
+                onNavigateToLinkedGoal={(goalId) => {
+                  window.dispatchEvent(
+                    new CustomEvent('paios_navigate', {
+                      detail: { screen: 'learn', goalId },
+                    })
+                  );
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 50/30/20 Budget Health Audit Card & AI Strategy */}
@@ -1420,6 +1619,43 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
           </div>
         </div>
       )}
+      {/* Daily Sweep Pour Modal */}
+      <DailySweepPourModal
+        isOpen={showSweepPourModal}
+        onClose={() => setShowSweepPourModal(false)}
+        availableSurplus={todaySurplusInfo.surplusAmount}
+        currency={profile.currency}
+        pots={pots}
+        profile={profile}
+        todayBudget={todaySurplusInfo.dailyBudget}
+        todayActualSpend={todaySurplusInfo.actualSpend}
+        onPourSuccess={handleSweepSuccess}
+      />
+
+      {/* Add / Edit Pot Modal */}
+      <AddEditPotModal
+        isOpen={showAddEditPotModal}
+        onClose={() => {
+          setShowAddEditPotModal(false);
+          setEditingPot(null);
+        }}
+        onSave={handleSavePot}
+        existingPot={editingPot}
+        currency={profile.currency}
+        allPots={pots}
+      />
+
+      {/* Pot Deposit / Withdraw Modal */}
+      <PotDepositWithdrawModal
+        isOpen={selectedPotForAction !== null}
+        onClose={() => setSelectedPotForAction(null)}
+        pot={selectedPotForAction}
+        mode={actionModalMode}
+        currency={profile.currency}
+        averageDailySurplus={avgSurplus}
+        dailySafeBudget={todaySurplusInfo.dailyBudget}
+        onConfirm={handleConfirmPotAction}
+      />
     </div>
   );
 };

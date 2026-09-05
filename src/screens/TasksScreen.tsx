@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Circle, Pin, Plus, Trash2, Filter, Tag, Play, Pause, Square, Timer } from 'lucide-react';
+import { CheckCircle2, Circle, Pin, Plus, Trash2, Filter, Tag, Play, Pause, Square, Timer, Coins } from 'lucide-react';
 import { Task, TaskStatus, ActivityLog } from '../types';
+import { PAIOSStorage } from '../storage';
 
 interface TasksScreenProps {
   tasks: Task[];
@@ -29,6 +30,22 @@ export const TasksScreen: React.FC<TasksScreenProps> = ({
 }) => {
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
+
+  const pots = PAIOSStorage.getSavingsPots();
+  const currency = PAIOSStorage.getBudgetProfile().currency || '₹';
+
+  const getMatchingPot = (title: string, desc?: string) => {
+    const text = (title + ' ' + (desc || '')).toLowerCase();
+    return pots.find((p) => {
+      const pTitle = p.title.toLowerCase();
+      const pGoal = (p.linkedGoalId || '').toLowerCase();
+      return (
+        text.includes(pTitle) ||
+        pTitle.includes(title.toLowerCase()) ||
+        (pGoal && (text.includes(pGoal) || pGoal.includes(title.toLowerCase())))
+      );
+    });
+  };
 
   const categories = ['ALL', ...Array.from(new Set(tasks.map((t) => t.category)))];
 
@@ -189,6 +206,21 @@ export const TasksScreen: React.FC<TasksScreenProps> = ({
                         Created {new Date(task.createdAtMillis).toLocaleDateString()}
                       </span>
                     </div>
+
+                    {/* Financial Readiness Chip */}
+                    {(() => {
+                      const matched = getMatchingPot(task.title, task.description);
+                      if (!matched) return null;
+                      const pct = Math.min(100, Math.round((matched.currentAmount / matched.targetAmount) * 100));
+                      return (
+                        <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-cyan-950/70 border border-cyan-800/60 rounded-xl text-[10px] font-mono text-cyan-300">
+                          <Coins className="w-3 h-3 text-cyan-400 shrink-0" />
+                          <span>
+                            {matched.title}: {currency}{matched.currentAmount.toLocaleString()} / {currency}{matched.targetAmount.toLocaleString()} ({pct}% Ready)
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 

@@ -155,6 +155,23 @@ export const App: React.FC = () => {
     };
     window.addEventListener('paios_storage_change', handleStorageChange);
 
+    const handleNavigate = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      if (detail.tab) {
+        setActiveTab(detail.tab);
+      } else if (detail.screen === 'learn') {
+        setActiveTab(NavTab.LEARN);
+      } else if (detail.screen === 'timeline') {
+        setActiveTab(NavTab.TIMELINE);
+      } else if (detail.screen === 'tasks') {
+        setActiveTab(NavTab.TASKS);
+      } else if (detail.screen === 'plugins' || detail.screen === 'money') {
+        setActiveTab(NavTab.PLUGINS);
+      }
+    };
+    window.addEventListener('paios_navigate', handleNavigate);
+
     // Bootstrap OfflineSyncManager Reconnection Listeners & Service Worker
     OfflineSyncManager.init();
     initBackgroundVersionChecker();
@@ -165,6 +182,7 @@ export const App: React.FC = () => {
 
     return () => {
       window.removeEventListener('paios_storage_change', handleStorageChange);
+      window.removeEventListener('paios_navigate', handleNavigate);
       unsubscribeUpdate();
     };
   }, []);

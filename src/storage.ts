@@ -24,8 +24,12 @@ import {
   ExpenseTransaction,
   DailySurplusRecord,
   BudgetRecoveryState,
+  SavingsPot,
+  PotAllocationRecord,
+  PotAllocationSource,
+  WithdrawalReasonCategory,
 } from './types';
-import { DEFAULT_BUDGET_PROFILE } from './core/plugins/MoneyManagerPlugin';
+import { DEFAULT_BUDGET_PROFILE, MoneyManagerPlugin } from './core/plugins/MoneyManagerPlugin';
 import { ConflictResolver } from './core/sync/ConflictResolver';
 import { OfflineSyncManager } from './core/sync/OfflineSyncManager';
 import { paiosDb, migrateLocalStorageToDexie } from './core/db';
@@ -58,7 +62,64 @@ const STORAGE_KEYS = {
   EXPENSES: 'paios_expenses_v1',
   DAILY_SURPLUS: 'paios_daily_surplus_v1',
   BUDGET_RECOVERY: 'paios_budget_recovery_v1',
+  SAVINGS_POTS: 'paios_savings_pots_v1',
+  POT_ALLOCATIONS: 'paios_pot_allocations_v1',
 };
+
+export const initialSavingsPots: SavingsPot[] = [
+  {
+    id: 'pot_pc_build',
+    title: 'Building PC',
+    targetAmount: 60000,
+    currentAmount: 18000,
+    categoryColor: 'cyan',
+    iconName: 'Cpu',
+    targetDate: '2026-12-31',
+    isCompleted: false,
+    isPriorityJar: true,
+    autoOverflowTargetId: 'pot_bike_fund',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'pot_istqb_cert',
+    title: 'ISTQB Certification Exam Fund',
+    targetAmount: 12000,
+    currentAmount: 4500,
+    categoryColor: 'violet',
+    iconName: 'Award',
+    targetDate: '2026-10-15',
+    isCompleted: false,
+    linkedGoalId: 'ISTQB Exam Prep',
+    autoOverflowTargetId: 'pot_pc_build',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'pot_bike_fund',
+    title: 'Bike Fund',
+    targetAmount: 45000,
+    currentAmount: 15000,
+    categoryColor: 'emerald',
+    iconName: 'Bike',
+    targetDate: '2027-03-31',
+    isCompleted: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'pot_mutual_fund',
+    title: 'Mutual Fund Starter',
+    targetAmount: 25000,
+    currentAmount: 10000,
+    categoryColor: 'amber',
+    iconName: 'TrendingUp',
+    targetDate: '2026-11-30',
+    isCompleted: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
 
 export const DEFAULT_BUDGET_RECOVERY_STATE: BudgetRecoveryState = {
   activeBreach: false,
@@ -636,6 +697,10 @@ function save<T>(key: string, value: T): void {
       paiosDb.appointments.clear().then(() => paiosDb.appointments.bulkPut(value)).catch(() => {});
     } else if (key === STORAGE_KEYS.CAPTURES && Array.isArray(value)) {
       paiosDb.captures.clear().then(() => paiosDb.captures.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.SAVINGS_POTS && Array.isArray(value)) {
+      paiosDb.savingsPots.clear().then(() => paiosDb.savingsPots.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.POT_ALLOCATIONS && Array.isArray(value)) {
+      paiosDb.potAllocations.clear().then(() => paiosDb.potAllocations.bulkPut(value)).catch(() => {});
     }
     paiosDb.vaultSync.put({ key, payload: value, updatedAt: now }).catch(() => {});
   } catch (dexieErr) {
@@ -862,6 +927,18 @@ export const storage = {
         memoryCache.set(STORAGE_KEYS.EXPENSES, { value: txs, timestamp: Date.now() });
         if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(txs));
       }
+      const potCount = await paiosDb.savingsPots.count();
+      if (potCount > 0) {
+        const pots = await paiosDb.savingsPots.toArray();
+        memoryCache.set(STORAGE_KEYS.SAVINGS_POTS, { value: pots, timestamp: Date.now() });
+        if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEYS.SAVINGS_POTS, JSON.stringify(pots));
+      }
+      const allocCount = await paiosDb.potAllocations.count();
+      if (allocCount > 0) {
+        const allocs = await paiosDb.potAllocations.toArray();
+        memoryCache.set(STORAGE_KEYS.POT_ALLOCATIONS, { value: allocs, timestamp: Date.now() });
+        if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEYS.POT_ALLOCATIONS, JSON.stringify(allocs));
+      }
       return true;
     } catch (e) {
       return false;
@@ -877,6 +954,10 @@ export const storage = {
       if (doses.length > 0) await paiosDb.doseEvents.bulkPut(doses);
       const txs = this.getExpenseTransactions();
       if (txs.length > 0) await paiosDb.transactions.bulkPut(txs);
+      const pots = this.getSavingsPots();
+      if (pots.length > 0) await paiosDb.savingsPots.bulkPut(pots);
+      const allocs = this.getPotAllocations();
+      if (allocs.length > 0) await paiosDb.potAllocations.bulkPut(allocs);
     } catch (e) {
       console.warn('[PAIOSStorage] syncToDexie notice:', e);
     }
@@ -1813,6 +1894,210 @@ ${journal.map((j) => `- [${formatTime(j.createdAtMillis)}] "${j.title}" (Mood Sc
   },
   saveBudgetRecoveryState(state: BudgetRecoveryState): void {
     save(STORAGE_KEYS.BUDGET_RECOVERY, state);
+  },
+
+  // --- TARGET SAVINGS POTS (JARS) STORAGE ---
+  getSavingsPots(): SavingsPot[] {
+    return load<SavingsPot[]>(STORAGE_KEYS.SAVINGS_POTS, initialSavingsPots);
+  },
+  saveSavingsPot(pot: SavingsPot): void {
+    let list = this.getSavingsPots();
+    // Enforce single active priority jar
+    if (pot.isPriorityJar) {
+      list = list.map((p) => (p.id !== pot.id && p.isPriorityJar ? { ...p, isPriorityJar: false } : p));
+    }
+
+    const idx = list.findIndex((p) => p.id === pot.id);
+    if (idx >= 0) {
+      list[idx] = { ...pot, updatedAt: new Date().toISOString() };
+    } else {
+      list.push(pot);
+    }
+    save(STORAGE_KEYS.SAVINGS_POTS, list);
+  },
+  deleteSavingsPot(id: string): void {
+    const list = this.getSavingsPots().filter((p) => p.id !== id);
+    save(STORAGE_KEYS.SAVINGS_POTS, list);
+  },
+  getPotAllocations(): PotAllocationRecord[] {
+    return load<PotAllocationRecord[]>(STORAGE_KEYS.POT_ALLOCATIONS, []);
+  },
+  savePotAllocation(record: PotAllocationRecord): void {
+    const list = this.getPotAllocations();
+    list.unshift(record);
+    save(STORAGE_KEYS.POT_ALLOCATIONS, list);
+  },
+  allocateToPot(
+    potId: string,
+    amount: number,
+    source: PotAllocationSource = 'MANUAL_DEPOSIT',
+    notes?: string,
+    date?: string
+  ): {
+    updatedPot: SavingsPot;
+    allocation: PotAllocationRecord;
+    overflowAllocation?: PotAllocationRecord;
+    overflowRouted?: {
+      fromPotId: string;
+      fromPotTitle: string;
+      toPotId: string;
+      toPotTitle: string;
+      amount: number;
+    };
+  } {
+    const pots = this.getSavingsPots();
+    const potIndex = pots.findIndex((p) => p.id === potId);
+    if (potIndex < 0) {
+      throw new Error(`Savings pot with id ${potId} not found`);
+    }
+
+    const today = date || getTodayDateString();
+    const nowIso = new Date().toISOString();
+
+    const pot = pots[potIndex];
+
+    // Check for overflow cascading if the pot has autoOverflowTargetId configured
+    const shouldCascade = Boolean(pot.autoOverflowTargetId);
+    const cascade = shouldCascade
+      ? MoneyManagerPlugin.cascadeOverflowAllocation(pots, potId, amount)
+      : {
+          allocations: [{ potId, amount, isOverflow: false }],
+          primaryAllocation: amount,
+          overflowAmount: 0,
+          updatedPots: pots,
+        };
+
+    // Primary allocation
+    const primaryAllocAmount = cascade.allocations[0]?.amount ?? amount;
+    const newCurrentAmount = Math.max(0, pot.currentAmount + primaryAllocAmount);
+    const isCompleted = newCurrentAmount >= pot.targetAmount;
+
+    const updatedPot: SavingsPot = {
+      ...pot,
+      currentAmount: newCurrentAmount,
+      isCompleted,
+      updatedAt: nowIso,
+    };
+    pots[potIndex] = updatedPot;
+
+    const primaryAllocation: PotAllocationRecord = {
+      id: `alloc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      potId,
+      amount: primaryAllocAmount,
+      date: today,
+      timestamp: nowIso,
+      source,
+      notes,
+    };
+    this.savePotAllocation(primaryAllocation);
+
+    // Handle overflow cascade destination if triggered
+    let overflowAllocation: PotAllocationRecord | undefined;
+    if (cascade.overflowRouted && cascade.allocations[1]) {
+      const destIndex = pots.findIndex((p) => p.id === cascade.overflowRouted!.toPotId);
+      if (destIndex >= 0) {
+        const destPot = pots[destIndex];
+        const newDestAmount = Math.max(0, destPot.currentAmount + cascade.allocations[1].amount);
+        pots[destIndex] = {
+          ...destPot,
+          currentAmount: newDestAmount,
+          isCompleted: newDestAmount >= destPot.targetAmount,
+          updatedAt: nowIso,
+        };
+
+        overflowAllocation = {
+          id: `alloc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          potId: destPot.id,
+          amount: cascade.allocations[1].amount,
+          date: today,
+          timestamp: nowIso,
+          source: 'OVERFLOW_CASCADE',
+          notes: `Overflow redirected from ${pot.title}`,
+        };
+        this.savePotAllocation(overflowAllocation);
+      }
+    }
+
+    save(STORAGE_KEYS.SAVINGS_POTS, pots);
+
+    return {
+      updatedPot,
+      allocation: primaryAllocation,
+      overflowAllocation,
+      overflowRouted: cascade.overflowRouted,
+    };
+  },
+  withdrawFromPot(
+    potId: string,
+    amount: number,
+    reasonOrNotes?: WithdrawalReasonCategory | string,
+    notesOrReason?: string | WithdrawalReasonCategory
+  ): { updatedPot: SavingsPot; allocation: PotAllocationRecord } {
+    const VALID_REASONS: WithdrawalReasonCategory[] = [
+      'MEDICAL_EMERGENCY',
+      'CRITICAL_BILL_OR_DEBT',
+      'URGENT_FAMILY_SUPPORT',
+      'IMPULSE_OR_OTHER',
+    ];
+
+    let reasonCategory: WithdrawalReasonCategory = 'IMPULSE_OR_OTHER';
+    let notes: string | undefined = undefined;
+
+    if (reasonOrNotes && VALID_REASONS.includes(reasonOrNotes as WithdrawalReasonCategory)) {
+      reasonCategory = reasonOrNotes as WithdrawalReasonCategory;
+      notes = typeof notesOrReason === 'string' ? notesOrReason : undefined;
+    } else if (notesOrReason && VALID_REASONS.includes(notesOrReason as WithdrawalReasonCategory)) {
+      reasonCategory = notesOrReason as WithdrawalReasonCategory;
+      notes = typeof reasonOrNotes === 'string' ? reasonOrNotes : undefined;
+    } else {
+      notes = typeof reasonOrNotes === 'string' ? reasonOrNotes : undefined;
+    }
+
+    const pots = this.getSavingsPots();
+    const potIndex = pots.findIndex((p) => p.id === potId);
+    if (potIndex < 0) {
+      throw new Error(`Savings pot with id ${potId} not found`);
+    }
+
+    const pot = pots[potIndex];
+    const withdrawable = Math.min(pot.currentAmount, Math.max(0, amount));
+    const newCurrentAmount = pot.currentAmount - withdrawable;
+    const isCompleted = newCurrentAmount >= pot.targetAmount;
+    const nowIso = new Date().toISOString();
+
+    const updatedPot: SavingsPot = {
+      ...pot,
+      currentAmount: newCurrentAmount,
+      isCompleted,
+      updatedAt: nowIso,
+    };
+    pots[potIndex] = updatedPot;
+    save(STORAGE_KEYS.SAVINGS_POTS, pots);
+
+    // Audit Logging: Store negative allocation record with reason category
+    const allocation: PotAllocationRecord = {
+      id: `alloc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      potId,
+      amount: -withdrawable,
+      date: getTodayDateString(),
+      timestamp: nowIso,
+      source: 'WITHDRAWAL_OVERRIDE',
+      withdrawalReasonCategory: reasonCategory,
+      notes: notes || `Emergency withdrawal (${reasonCategory})`,
+    };
+    this.savePotAllocation(allocation);
+
+    // Update liquid balance and savings balance in budget profile
+    const profile = this.getBudgetProfile();
+    const updatedProfile: BudgetProfile = {
+      ...profile,
+      currentBalance: (profile.currentBalance || 0) + withdrawable,
+      currentSaved: Math.max(0, (profile.currentSaved || 0) - withdrawable),
+      updatedAtMillis: Date.now(),
+    };
+    this.saveBudgetProfile(updatedProfile);
+
+    return { updatedPot, allocation };
   },
 
   // --- LOCAL-FIRST CACHE & OFFLINE ENGINE HELPERS ---

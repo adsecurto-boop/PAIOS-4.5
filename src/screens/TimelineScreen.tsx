@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Check,
   X,
+  Coins,
 } from 'lucide-react';
 import {
   TimelineEntry,
@@ -28,6 +29,7 @@ import {
   UserSettings,
 } from '../types';
 import { TimetablePlugin, TimetableProposal } from '../core/plugins/TimetablePlugin';
+import { PAIOSStorage } from '../storage';
 
 interface TimelineScreenProps {
   timelineEntries: TimelineEntry[];
@@ -354,6 +356,58 @@ export const TimelineScreen: React.FC<TimelineScreenProps> = ({
                 </div>
               ))}
             </div>
+
+            {/* Financial Target Jar Milestones & Readiness */}
+            {(() => {
+              const savingsPots = PAIOSStorage.getSavingsPots();
+              const currency = PAIOSStorage.getBudgetProfile().currency || '₹';
+              if (savingsPots.length === 0) return null;
+              return (
+                <div className="pt-3 border-t border-slate-800/80 space-y-2">
+                  <h5 className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                    <Coins className="w-3.5 h-3.5" />
+                    <span>Target Savings Pot Milestones &amp; Timelines</span>
+                  </h5>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {savingsPots.map((pot) => {
+                      const pct = Math.min(100, Math.round((pot.currentAmount / pot.targetAmount) * 100));
+                      return (
+                        <div
+                          key={pot.id}
+                          className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
+                              <span>{pot.title}</span>
+                              {pot.isPriorityJar && (
+                                <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1 py-0.2 rounded font-mono">
+                                  Priority
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-mono">
+                              {currency}{pot.currentAmount.toLocaleString()} / {currency}{pot.targetAmount.toLocaleString()} ({pct}%)
+                              {pot.targetDate && ` • Target: ${pot.targetDate}`}
+                            </p>
+                          </div>
+                          <span
+                            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                              pot.isCompleted
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                : pct >= 75
+                                ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
+                                : 'bg-slate-800 text-slate-300'
+                            }`}
+                          >
+                            {pot.isCompleted ? 'Achieved 🚀' : `${pct}% Funded`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

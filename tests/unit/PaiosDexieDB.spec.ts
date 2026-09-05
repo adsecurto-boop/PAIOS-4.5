@@ -13,6 +13,8 @@ describe('PaiosDexieDB (Dexie.js / IndexedDB)', () => {
     await paiosDb.medications.clear();
     await paiosDb.doseEvents.clear();
     await paiosDb.transactions.clear();
+    await paiosDb.savingsPots.clear();
+    await paiosDb.potAllocations.clear();
   });
 
   it('initializes tables properly and permits typed CRUD operations', async () => {
@@ -97,4 +99,37 @@ describe('PaiosDexieDB (Dexie.js / IndexedDB)', () => {
     expect(found).toBeDefined();
     expect(found?.genericName).toBe('Testolol');
   });
+
+  it('supports savingsPots and potAllocations typed stores in Dexie DB', async () => {
+    await paiosDb.savingsPots.put({
+      id: 'pot_dexie_test',
+      title: 'PC Upgrade',
+      targetAmount: 50000,
+      currentAmount: 15000,
+      categoryColor: 'cyan',
+      iconName: 'Cpu',
+      isCompleted: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    const pot = await paiosDb.savingsPots.get('pot_dexie_test');
+    expect(pot).toBeDefined();
+    expect(pot?.title).toBe('PC Upgrade');
+    expect(pot?.targetAmount).toBe(50000);
+
+    await paiosDb.potAllocations.put({
+      id: 'alloc_dexie_test_1',
+      potId: 'pot_dexie_test',
+      amount: 150,
+      date: '2026-09-05',
+      timestamp: new Date().toISOString(),
+      source: 'DAILY_LEFTOVER_SWEEP',
+    });
+
+    const alloc = await paiosDb.potAllocations.get('alloc_dexie_test_1');
+    expect(alloc).toBeDefined();
+    expect(alloc?.amount).toBe(150);
+  });
 });
+

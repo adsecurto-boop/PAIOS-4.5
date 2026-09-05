@@ -480,3 +480,43 @@ export interface BudgetAnalysisResult {
 }
 
 
+// --- TARGET SAVINGS POTS (JARS / SINKING FUNDS) ---
+export interface SavingsPot {
+  id: string;
+  title: string;                 // e.g., "Building PC", "ISTQB Exam", "Bike Fund"
+  targetAmount: number;          // e.g., 50000, 3500
+  currentAmount: number;         // accumulated savings
+  categoryColor: string;         // accent color (cyan, emerald, violet, amber, etc.)
+  iconName: string;              // Lucide icon key (e.g., 'Cpu', 'Award', 'Bike', 'TrendingUp')
+  targetDate?: string;           // Optional target completion date (YYYY-MM-DD)
+  isCompleted: boolean;
+  isPriorityJar?: boolean;       // Only one pot can be active priority at a time
+  autoOverflowTargetId?: string; // Pot ID to receive surplus once this pot hits 100%
+  linkedGoalId?: string;         // Optional link to a PAIOS Goal/Project (e.g., ISTQB Exam)
+  createdAt: string;             // ISO timestamp
+  updatedAt: string;
+}
+
+export type PotAllocationSource =
+  | 'DAILY_LEFTOVER_SWEEP'
+  | 'MANUAL_DEPOSIT'
+  | 'WINDFALL'
+  | 'WITHDRAWAL_OVERRIDE'
+  | 'OVERFLOW_CASCADE';
+
+export type WithdrawalReasonCategory =
+  | 'MEDICAL_EMERGENCY'
+  | 'CRITICAL_BILL_OR_DEBT'
+  | 'URGENT_FAMILY_SUPPORT'
+  | 'IMPULSE_OR_OTHER';
+
+export interface PotAllocationRecord {
+  id: string;
+  potId: string;
+  amount: number;
+  date: string;                  // YYYY-MM-DD
+  timestamp: string;             // ISO timestamp
+  source: PotAllocationSource;
+  withdrawalReasonCategory?: WithdrawalReasonCategory;
+  notes?: string;
+}

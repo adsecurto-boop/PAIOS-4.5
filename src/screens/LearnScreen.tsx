@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Brain, Plus, Play, RotateCw, CheckCircle, Award, Trash2, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { Brain, Plus, Play, RotateCw, CheckCircle, Award, Trash2, Eye, EyeOff, Sparkles, Coins } from 'lucide-react';
 import { StudyCard } from '../types';
+import { PAIOSStorage } from '../storage';
 
 interface LearnScreenProps {
   studyCards: StudyCard[];
@@ -20,6 +21,22 @@ export const LearnScreen: React.FC<LearnScreenProps> = ({
   const [activeCardIndex, setActiveCardIndex] = useState<number | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState('ALL');
+
+  const pots = PAIOSStorage.getSavingsPots();
+  const currency = PAIOSStorage.getBudgetProfile().currency || '₹';
+
+  const getMatchingPot = (topic: string, question?: string) => {
+    const query = (topic + ' ' + (question || '')).toLowerCase();
+    return pots.find((p) => {
+      const pTitle = p.title.toLowerCase();
+      const pGoal = (p.linkedGoalId || '').toLowerCase();
+      return (
+        query.includes(pTitle) ||
+        pTitle.includes(topic.toLowerCase()) ||
+        (pGoal && (query.includes(pGoal) || pGoal.includes(topic.toLowerCase())))
+      );
+    });
+  };
 
   const topics = ['ALL', ...Array.from(new Set(studyCards.map((c) => c.topic)))];
 
@@ -198,6 +215,20 @@ export const LearnScreen: React.FC<LearnScreenProps> = ({
 
               <h4 className="text-sm font-semibold text-white mb-2">{card.question}</h4>
               <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed whitespace-pre-line">{card.answer}</p>
+
+              {(() => {
+                const matched = getMatchingPot(card.topic, card.question);
+                if (!matched) return null;
+                const pct = Math.min(100, Math.round((matched.currentAmount / matched.targetAmount) * 100));
+                return (
+                  <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 bg-cyan-950/70 border border-cyan-800/60 rounded-xl text-[10px] font-mono text-cyan-300">
+                    <Coins className="w-3 h-3 text-cyan-400 shrink-0" />
+                    <span>
+                      {matched.title}: {currency}{matched.currentAmount.toLocaleString()} / {currency}{matched.targetAmount.toLocaleString()} ({pct}% Ready)
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="flex items-center justify-between pt-3 mt-3 border-t border-slate-800/80">
