@@ -132,10 +132,17 @@ export async function migrateLocalStorageToDexie(): Promise<void> {
     if (doseCount === 0) {
       const rawDoses = localStorage.getItem('paios_dose_events_v1');
       if (rawDoses) {
-        const doses: DoseEvent[] = JSON.parse(rawDoses);
-        if (Array.isArray(doses) && doses.length > 0) {
-          await paiosDb.doseEvents.bulkPut(doses);
-        }
+        try {
+          const parsed = JSON.parse(rawDoses);
+          const doses: DoseEvent[] = Array.isArray(parsed)
+            ? parsed
+            : typeof parsed === 'object' && parsed !== null
+            ? (Object.values(parsed) as DoseEvent[][]).flat()
+            : [];
+          if (doses.length > 0) {
+            await paiosDb.doseEvents.bulkPut(doses);
+          }
+        } catch (e) {}
       }
     }
 

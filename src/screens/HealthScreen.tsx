@@ -41,6 +41,7 @@ import {
   Appointment,
 } from '../types';
 import { PAIOSStorage, getTodayDateString, scheduleTimesToTimingSlots } from '../storage';
+import { MedicationScheduleCard } from '../components/health/MedicationScheduleCard';
 
 export function calcRefillStockDetails(refill: RefillInventory, todayStr: string) {
   const purchaseDateStr = refill.purchaseDateString || refill.lastRefillDateString || '2026-08-01';
@@ -627,86 +628,14 @@ NOTICE: Generated automatically by PAIOS for patient-clinician discussion.
               const refill = refillInventories.find((r) => r.medicationId === dose.medicationId);
 
               return (
-                <div
+                <MedicationScheduleCard
                   key={dose.id}
-                  className={`border rounded-2xl p-4 transition-all space-y-3 ${
-                    dose.status === 'TAKEN' || dose.status === 'TAKEN_LATE'
-                      ? 'bg-emerald-950/20 border-emerald-800/40'
-                      : dose.status === 'SKIPPED'
-                      ? 'bg-amber-950/20 border-amber-800/40'
-                      : 'bg-slate-900/70 border-slate-800'
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 text-xs font-mono rounded-lg bg-slate-800 text-emerald-300 font-semibold">
-                          {dose.scheduledTime}
-                        </span>
-                        <h3 className="text-sm font-bold text-white">{dose.medicationName}</h3>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1">{med?.instructions || 'Take as prescribed.'}</p>
-                    </div>
-
-                    <span
-                      className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                        dose.status === 'TAKEN'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : dose.status === 'TAKEN_LATE'
-                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                          : dose.status === 'SKIPPED'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                          : 'bg-slate-800 text-slate-300'
-                      }`}
-                    >
-                      {dose.status}
-                    </span>
-                  </div>
-
-                  {/* Metadata Indicators */}
-                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                    <span className="text-slate-300">Doctor: {med?.prescribingDoctor || primaryDoctor.name}</span>
-                    {refill && (
-                      <span className={refill.quantityRemaining <= 7 ? 'text-amber-400 font-bold' : 'text-slate-400'}>
-                        Supply: {refill.quantityRemaining} {refill.unit} left
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Interactive Dose Buttons */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      onClick={() => onLogDose(dose.id, 'TAKEN')}
-                      className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1 ${
-                        dose.status === 'TAKEN'
-                          ? 'bg-emerald-600 text-white shadow'
-                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
-                      }`}
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Take Dose</span>
-                    </button>
-
-                    <button
-                      onClick={() => onLogDose(dose.id, 'SKIPPED')}
-                      className={`py-1.5 px-3 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1 ${
-                        dose.status === 'SKIPPED'
-                          ? 'bg-amber-600 text-white shadow'
-                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20'
-                      }`}
-                    >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>Skip</span>
-                    </button>
-
-                    <button
-                      onClick={() => onLogDose(dose.id, 'TAKEN_LATE')}
-                      className="py-1.5 px-3 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl"
-                    >
-                      Taken Late
-                    </button>
-                  </div>
-                </div>
+                  dose={dose}
+                  medication={med}
+                  refill={refill}
+                  onLogDose={onLogDose}
+                  doctorName={primaryDoctor.name}
+                />
               );
             })}
           </div>

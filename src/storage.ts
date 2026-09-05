@@ -196,8 +196,8 @@ const initialMedications: Medication[] = [
     route: 'oral',
     status: 'active',
     rxNormCui: '312940',
-    instructions: 'Take 1 tablet every morning with food.',
-    scheduleTimes: ['08:00'],
+    instructions: 'Take 1 tablet twice daily (morning with food and night).',
+    scheduleTimes: ['08:00', '21:00'],
     foodRelation: 'with_meals',
     createdAtMillis: Date.now() - 86400000 * 30,
     prescribingDoctor: 'Dr Devendra Ratnani',
@@ -275,7 +275,7 @@ const initialRefills: RefillInventory[] = [
     medicationName: 'Sertraline HCl 50 mg',
     quantityRemaining: 15,
     unit: 'tablets',
-    dailyBurnRate: 1,
+    dailyBurnRate: 2,
     minimumThresholdDays: 7,
     pharmacyName: 'CVS Pharmacy #4821',
     pharmacyPhone: '(555) 019-2831',
@@ -283,8 +283,8 @@ const initialRefills: RefillInventory[] = [
     lastRefillDateString: '2026-08-01',
     purchaseDateString: '2026-08-01',
     daysSupplied: 30,
-    dosesPerDay: 1,
-    timingSlots: ['Morning'],
+    dosesPerDay: 2,
+    timingSlots: ['Morning', 'Night'],
   },
   {
     id: 'refill_2',
@@ -679,8 +679,13 @@ function save<T>(key: string, value: T): void {
       paiosDb.tasks.clear().then(() => paiosDb.tasks.bulkPut(value)).catch(() => {});
     } else if (key === STORAGE_KEYS.MEDICATIONS && Array.isArray(value)) {
       paiosDb.medications.clear().then(() => paiosDb.medications.bulkPut(value)).catch(() => {});
-    } else if (key === STORAGE_KEYS.DOSE_EVENTS && Array.isArray(value)) {
-      paiosDb.doseEvents.clear().then(() => paiosDb.doseEvents.bulkPut(value)).catch(() => {});
+    } else if (key === STORAGE_KEYS.DOSE_EVENTS) {
+      const doseList: DoseEvent[] = Array.isArray(value)
+        ? value
+        : typeof value === 'object' && value !== null
+        ? (Object.values(value) as DoseEvent[][]).flat()
+        : [];
+      paiosDb.doseEvents.bulkPut(doseList).catch(() => {});
     } else if ((key === STORAGE_KEYS.EXPENSES || key === 'paios_expense_transactions_v1') && Array.isArray(value)) {
       paiosDb.transactions.clear().then(() => paiosDb.transactions.bulkPut(value)).catch(() => {});
     } else if (key === STORAGE_KEYS.REFILLS && Array.isArray(value)) {
@@ -918,8 +923,14 @@ export const storage = {
       const doseCount = await paiosDb.doseEvents.count();
       if (doseCount > 0) {
         const doses = await paiosDb.doseEvents.toArray();
-        memoryCache.set(STORAGE_KEYS.DOSE_EVENTS, { value: doses, timestamp: Date.now() });
-        if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEYS.DOSE_EVENTS, JSON.stringify(doses));
+        const doseRecord: Record<string, DoseEvent[]> = {};
+        doses.forEach((d) => {
+          const dDate = d.scheduledDateString || getTodayDateString();
+          if (!doseRecord[dDate]) doseRecord[dDate] = [];
+          doseRecord[dDate].push(d);
+        });
+        memoryCache.set(STORAGE_KEYS.DOSE_EVENTS, { value: doseRecord, timestamp: Date.now() });
+        if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEYS.DOSE_EVENTS, JSON.stringify(doseRecord));
       }
       const txCount = await paiosDb.transactions.count();
       if (txCount > 0) {
@@ -1442,10 +1453,16 @@ export const storage = {
     const refills = this.getRefillInventories();
     const idx = refills.findIndex((r) => r.id === refill.id);
 
+    const existingMed = this.getMedications().find(
+      (m) => m.id === refill.medicationId || refill.medicationName.toLowerCase().includes(m.genericName.toLowerCase())
+    );
+
     // Auto-calculate daily burn rate based on updated schedule frequency
     const slots: ('Morning' | 'Afternoon' | 'Night')[] =
       refill.timingSlots && refill.timingSlots.length > 0
         ? (refill.timingSlots as ('Morning' | 'Afternoon' | 'Night')[])
+        : existingMed && existingMed.scheduleTimes && existingMed.scheduleTimes.length > 0
+        ? scheduleTimesToTimingSlots(existingMed.scheduleTimes)
         : ['Morning'];
     const dosesPerDay = refill.dosesPerDay || slots.length || 1;
     const updatedRefill: RefillInventory = {
@@ -1462,13 +1479,13 @@ export const storage = {
     }
     save(STORAGE_KEYS.REFILLS, refills);
 
-    // Single source of truth: synchronize Medication scheduleTimes & instructions
+    // Single source of truth: synchronize Medication scheduleTimes only if timingSlots was explicitly supplied
     try {
       const meds = this.getMedications();
       const med = meds.find(
         (m) => m.id === updatedRefill.medicationId || updatedRefill.medicationName.toLowerCase().includes(m.genericName.toLowerCase())
       );
-      if (med) {
+      if (med && refill.timingSlots && refill.timingSlots.length > 0) {
         const newTimes = timingSlotsToScheduleTimes(updatedRefill.timingSlots);
         med.scheduleTimes = newTimes;
         save(STORAGE_KEYS.MEDICATIONS, meds);
@@ -1620,20 +1637,33 @@ export const storage = {
   },
   getDoseEvents(dateStr?: string): DoseEvent[] {
     const date = dateStr || getTodayDateString();
-    const allEvents: Record<string, DoseEvent[]> = load(STORAGE_KEYS.DOSE_EVENTS, {});
-    
-    if (!allEvents[date]) {
-      // Auto-generate dose events for active medications for this date
-      const meds = this.getMedications().filter((m) => m.status === 'active');
-      const generated: DoseEvent[] = [];
+    const allEventsRaw = load<any>(STORAGE_KEYS.DOSE_EVENTS, {});
+    const allEvents: Record<string, DoseEvent[]> = {};
+    if (Array.isArray(allEventsRaw)) {
+      allEventsRaw.forEach((d: DoseEvent) => {
+        const dDate = d.scheduledDateString || date;
+        if (!allEvents[dDate]) allEvents[dDate] = [];
+        allEvents[dDate].push(d);
+      });
+    } else if (typeof allEventsRaw === 'object' && allEventsRaw !== null) {
+      Object.assign(allEvents, allEventsRaw);
+    }
+    const meds = this.getMedications().filter((m) => m.status === 'active');
+
+    let dateEvents = allEvents[date];
+    let modified = false;
+
+    if (!dateEvents) {
+      dateEvents = [];
       meds.forEach((m) => {
         m.scheduleTimes.forEach((time) => {
-          generated.push({
-            id: `dose_${m.id}_${date}_${time.replace(':', '')}`,
+          const cleanTime = time.trim();
+          dateEvents.push({
+            id: `dose_${m.id}_${date}_${cleanTime.replace(':', '')}`,
             medicationId: m.id,
             medicationName: `${m.genericName} ${m.dosageStrength}${m.dosageUnit}`,
             dosage: `${m.dosageStrength} ${m.dosageUnit}`,
-            scheduledTime: time,
+            scheduledTime: cleanTime,
             scheduledDateString: date,
             status: 'SCHEDULED',
             actualTakenTimeMillis: null,
@@ -1641,7 +1671,35 @@ export const storage = {
           });
         });
       });
-      allEvents[date] = generated;
+      allEvents[date] = dateEvents;
+      modified = true;
+    } else {
+      // Ensure all active medication schedule times have a corresponding slot
+      meds.forEach((m) => {
+        m.scheduleTimes.forEach((time) => {
+          const cleanTime = time.trim();
+          const exists = dateEvents.some(
+            (d) => d.medicationId === m.id && d.scheduledTime === cleanTime
+          );
+          if (!exists) {
+            dateEvents.push({
+              id: `dose_${m.id}_${date}_${cleanTime.replace(':', '')}`,
+              medicationId: m.id,
+              medicationName: `${m.genericName} ${m.dosageStrength}${m.dosageUnit}`,
+              dosage: `${m.dosageStrength} ${m.dosageUnit}`,
+              scheduledTime: cleanTime,
+              scheduledDateString: date,
+              status: 'SCHEDULED',
+              actualTakenTimeMillis: null,
+              note: null,
+            });
+            modified = true;
+          }
+        });
+      });
+    }
+
+    if (modified) {
       save(STORAGE_KEYS.DOSE_EVENTS, allEvents);
     }
 
@@ -1655,17 +1713,37 @@ export const storage = {
     const dose = todayEvents.find((d) => d.id === doseId);
     if (!dose) return null;
 
+    // 1. Single-action terminal locking guard:
+    // If dose is already in a completed or terminal state, reject further modifications and inventory depletion
+    if (dose.status === 'TAKEN' || dose.status === 'TAKEN_LATE' || dose.status === 'SKIPPED') {
+      console.warn(`[PAIOSStorage] Dose ${doseId} is already locked in state ${dose.status}. Duplicate action rejected.`);
+      return dose;
+    }
+
+    // 2. Refill supply depletion guard:
+    // If taking dose, verify that stock is available in the refill vault
+    if (status === 'TAKEN' || status === 'TAKEN_LATE') {
+      const refill = this.getRefillInventories().find(
+        (r) => r.medicationId === dose.medicationId || r.id === dose.medicationId
+      );
+      if (refill && refill.quantityRemaining <= 0) {
+        console.warn(`[PAIOSStorage] Cannot take dose for ${dose.medicationName}: 0 supply remaining in vault.`);
+        return null;
+      }
+    }
+
+    // 3. Strictly single inventory deduction:
+    // Only decrement refill count when transitioning from unconfirmed (SCHEDULED/MISSED) to TAKEN/TAKEN_LATE
+    if ((status === 'TAKEN' || status === 'TAKEN_LATE') && (dose.status === 'SCHEDULED' || dose.status === 'MISSED')) {
+      this.updateRefillQuantity(dose.medicationId, -1, false);
+    }
+
     dose.status = status;
     dose.actualTakenTimeMillis = Date.now();
     if (note) dose.note = note;
 
     allEvents[date] = todayEvents;
     save(STORAGE_KEYS.DOSE_EVENTS, allEvents);
-
-    // Update refill count if dose taken
-    if (status === 'TAKEN' || status === 'TAKEN_LATE') {
-      this.updateRefillQuantity(dose.medicationId, -1, false);
-    }
 
     // Add to timeline ledger
     this.addTimelineEntry({
