@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, CheckCircle, Pin, Tag, AlertTriangle } from 'lucide-react';
 
 interface TaskModalProps {
@@ -14,6 +14,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
   const [isPriority, setIsPriority] = useState(false);
   const [description, setDescription] = useState('');
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onDismiss();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onDismiss]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -22,16 +32,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-modal-title"
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in duration-150">
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2 text-indigo-400">
             <CheckCircle className="w-5 h-5" />
-            <h3 className="font-heading font-bold text-lg text-white">Add New Task</h3>
+            <h3 id="task-modal-title" className="font-heading font-bold text-lg text-white">Add New Task</h3>
           </div>
           <button
+            type="button"
             onClick={onDismiss}
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close Task Modal"
           >
             <X className="w-5 h-5" />
           </button>
@@ -82,6 +99,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
               className={`p-2 rounded-lg transition-colors ${
                 isPriority ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800 text-slate-400'
               }`}
+              aria-label="Toggle priority pin"
             >
               <Pin className="w-4 h-4 fill-current" />
             </button>

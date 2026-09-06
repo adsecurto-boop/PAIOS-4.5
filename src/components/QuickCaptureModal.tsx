@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Zap, Tag } from 'lucide-react';
 
 interface QuickCaptureModalProps {
@@ -12,6 +12,16 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ onDismiss,
   const [text, setText] = useState('');
   const [category, setCategory] = useState('Personal');
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onDismiss();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onDismiss]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) return;
@@ -20,16 +30,23 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ onDismiss,
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="quick-capture-title"
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in duration-150">
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2 text-cyan-400">
             <Zap className="w-5 h-5 fill-current" />
-            <h3 className="font-heading font-bold text-lg text-white">Quick Capture Note</h3>
+            <h3 id="quick-capture-title" className="font-heading font-bold text-lg text-white">Quick Capture Note</h3>
           </div>
           <button
+            type="button"
             onClick={onDismiss}
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close Quick Capture Modal"
           >
             <X className="w-5 h-5" />
           </button>
