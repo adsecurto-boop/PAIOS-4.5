@@ -1,8 +1,13 @@
-// PAIOS Version Manifest & Background Update Checker
-import { UpdateService, VersionManifest, CURRENT_CLIENT_VERSION } from '../services/UpdateService';
+import {
+  UpdateService,
+  VersionManifest,
+  CURRENT_CLIENT_VERSION,
+  isSemVerGreater,
+  isDevelopmentEnvironment,
+} from '../services/UpdateService';
 
 export type { VersionManifest, PlatformAssetInfo, DownloadProgress } from '../services/UpdateService';
-export { CURRENT_CLIENT_VERSION } from '../services/UpdateService';
+export { CURRENT_CLIENT_VERSION, isSemVerGreater, compareSemVer, isDevelopmentEnvironment } from '../services/UpdateService';
 
 // Re-export CLIENT_VERSION for backward compatibility
 export const CLIENT_VERSION: VersionManifest = CURRENT_CLIENT_VERSION;
@@ -18,7 +23,10 @@ let checkIntervalTimer: any = null;
  */
 export function onVersionUpdateAvailable(callback: UpdateCallback): () => void {
   updateListeners.add(callback);
-  if (latestAvailableManifest) {
+  if (
+    latestAvailableManifest &&
+    isSemVerGreater(latestAvailableManifest.version, CURRENT_CLIENT_VERSION.version)
+  ) {
     callback(latestAvailableManifest);
   }
   return () => {
@@ -63,19 +71,31 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
  * Fetches version manifest and checks if a newer version exists
  */
 export async function checkForAppUpdates(): Promise<{ updateAvailable: boolean; serverManifest: VersionManifest | null }> {
+  // Suppress automatic update checks if in development environment
+  if (isDevelopmentEnvironment()) {
+    return { updateAvailable: false, serverManifest: null };
+  }
+
   try {
     const result = await UpdateService.checkForUpdates();
-    if (result.updateAvailable) {
+    if (
+      result.updateAvailable &&
+      result.manifest?.version &&
+      isSemVerGreater(result.manifest.version, CURRENT_CLIENT_VERSION.version)
+    ) {
       latestAvailableManifest = result.manifest;
       updateListeners.forEach((cb) => cb(result.manifest));
 
-      window.dispatchEvent(
-        new CustomEvent('paios_version_update_available', {
-          detail: result.manifest,
-        })
-      );
+      if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('paios_version_update_available', {
+            detail: result.manifest,
+          })
+        );
+      }
+      return { updateAvailable: true, serverManifest: result.manifest };
     }
-    return { updateAvailable: result.updateAvailable, serverManifest: result.manifest };
+    return { updateAvailable: false, serverManifest: null };
   } catch (err) {
     console.warn('[PAIOS AutoUpdate] Check for updates failed:', err);
     return { updateAvailable: false, serverManifest: null };
@@ -86,12 +106,20 @@ export async function checkForAppUpdates(): Promise<{ updateAvailable: boolean; 
  * Initializes the background update checker at app launch
  */
 export function initBackgroundVersionChecker(): void {
+  // If in local development, skip background polling and focus triggers
+  if (isDevelopmentEnvironment()) {
+    console.log('[PAIOS AutoUpdate] Background version checker disabled in development mode.');
+    return;
+  }
+
   registerServiceWorker();
   checkForAppUpdates();
 
-  window.addEventListener('focus', () => {
-    checkForAppUpdates();
-  });
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', () => {
+      checkForAppUpdates();
+    });
+  }
 
   if (!checkIntervalTimer) {
     checkIntervalTimer = setInterval(() => {

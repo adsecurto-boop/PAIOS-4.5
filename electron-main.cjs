@@ -100,33 +100,75 @@ function createWindow() {
   const devUrl = process.env.ELECTRON_START_URL || 'http://localhost:3001';
   const remoteUrl = process.env.PAIOS_REMOTE_URL || config.liveUrl || DEFAULT_LIVE_URL;
 
+// Strict SemVer helper for Electron main process
+function isSemVerGreaterMain(remote, current) {
+  const parse = (v) => {
+    if (!v) return [0, 0, 0];
+    const cleaned = String(v).trim().replace(/^v/i, '').split('-')[0].split('+')[0];
+    const parts = cleaned.split('.').map((p) => {
+      const num = parseInt(p, 10);
+      return isNaN(num) ? 0 : num;
+    });
+    while (parts.length < 3) parts.push(0);
+    return parts.slice(0, 3);
+  };
+  const [maj1, min1, patch1] = parse(remote);
+  const [maj2, min2, patch2] = parse(current);
+  if (maj1 !== maj2) return maj1 > maj2;
+  if (min1 !== min2) return min1 > min2;
+  if (patch1 !== patch2) return patch1 > patch2;
+  return false;
+}
+
   function loadLocalDist() {
     const userDistDir = path.join(app.getPath('userData'), 'current_dist');
     const userDistIndex = path.join(userDistDir, 'index.html');
     const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
+    const activeVersionFile = path.join(app.getPath('userData'), 'active_version.json');
+    const currentVersion = app.getVersion() || '4.6.1';
 
-    if (fs.existsSync(userDistIndex) && isValidProductionDist(userDistDir)) {
-      // Check if bundled executable has a newer timestamp than the cached userData dist
-      let bundledIsNewer = false;
-      try {
-        if (fs.existsSync(bundledDistIndex)) {
-          const bundledStat = fs.statSync(bundledDistIndex);
-          const userStat = fs.statSync(userDistIndex);
-          if (bundledStat.mtimeMs > userStat.mtimeMs + 2000) {
-            bundledIsNewer = true;
-          }
-        }
-      } catch (e) {}
-
-      if (bundledIsNewer) {
-        console.log('[PAIOS Electron] Bundled app binary is newer than cached userData, loading fresh bundled assets.');
+    // Development & Unpackaged Guard:
+    // When running locally from workspace, ALWAYS prioritize compiled workspace dist.
+    // Purge any stale userData dist immediately so local feature upgrades are never masked.
+    if (!app.isPackaged || process.env.NODE_ENV === 'development') {
+      if (fs.existsSync(userDistDir)) {
+        console.log('[PAIOS Electron] Development/Unpackaged mode: purging userData cached dist to protect workspace sources.');
         try {
           fs.rmSync(userDistDir, { recursive: true, force: true });
         } catch (e) {}
-        mainWindow.loadFile(bundledDistIndex);
-        return;
       }
+      if (fs.existsSync(bundledDistIndex)) {
+        mainWindow.loadFile(bundledDistIndex);
+      } else {
+        console.warn('dist/index.html not found. Run "npm run build" to create production assets.');
+      }
+      return;
+    }
 
+    // Production Packaged Mode:
+    // Check if cached userData version is older than or equal to current application version
+    let cachedIsStale = false;
+    if (fs.existsSync(activeVersionFile)) {
+      try {
+        const cachedManifest = JSON.parse(fs.readFileSync(activeVersionFile, 'utf8'));
+        if (!isSemVerGreaterMain(cachedManifest.version, currentVersion)) {
+          console.log(`[PAIOS Electron] Cached version (${cachedManifest.version}) <= bundled version (${currentVersion}), discarding outdated cache.`);
+          cachedIsStale = true;
+        }
+      } catch (e) {
+        cachedIsStale = true;
+      }
+    } else if (fs.existsSync(userDistDir)) {
+      cachedIsStale = true;
+    }
+
+    if (cachedIsStale && fs.existsSync(userDistDir)) {
+      try {
+        fs.rmSync(userDistDir, { recursive: true, force: true });
+      } catch (e) {}
+    }
+
+    if (fs.existsSync(userDistIndex) && isValidProductionDist(userDistDir)) {
       console.log('[PAIOS Electron] Loading verified updated distribution from userData:', userDistIndex);
       mainWindow.loadFile(userDistIndex).catch((err) => {
         console.warn('Failed to load updated dist from userData, falling back to bundled:', err);
@@ -135,12 +177,6 @@ function createWindow() {
         }
       });
     } else {
-      if (fs.existsSync(userDistDir) && !isValidProductionDist(userDistDir)) {
-        console.warn('[PAIOS Electron] Found invalid/uncompiled dist in userData, purging and falling back to bundled assets.');
-        try {
-          fs.rmSync(userDistDir, { recursive: true, force: true });
-        } catch (e) {}
-      }
       if (fs.existsSync(bundledDistIndex)) {
         mainWindow.loadFile(bundledDistIndex);
       } else {
@@ -266,7 +302,7 @@ ipcMain.handle('show-desktop-notification', async (event, data) => {
 
 // IPC Handlers for In-App Live Sync & Auto-Update Controls
 ipcMain.handle('paios:get-version', () => {
-  return app.getVersion() || '4.5.7';
+  return app.getVersion() || '4.6.1';
 });
 
 ipcMain.handle('paios:get-config', () => {
@@ -419,6 +455,20 @@ ipcMain.handle('paios:get-user-data-path', async () => {
 
 // IPC Handler: Apply Windows Desktop Update
 ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuffer, gitCommit }) => {
+  // SECURITY & DECOUPLING GUARD:
+  // If running in development, or if the app is unpackaged, strictly refuse to apply updates.
+  // This prevents any downloaded archive from touching or overwriting local workspace source trees.
+  if (!app.isPackaged || process.env.NODE_ENV === 'development') {
+    console.warn('[PAIOS Updater] Blocked: Cannot apply binary updates in development or unpackaged workspace mode.');
+    return { success: false, error: 'Updater disabled in development/workspace mode', updated: false };
+  }
+
+  const currentAppVersion = app.getVersion() || '4.6.1';
+  if (!isSemVerGreaterMain(version, currentAppVersion)) {
+    console.warn(`[PAIOS Updater] Blocked: Target version (${version}) is not strictly newer than current (${currentAppVersion}).`);
+    return { success: false, error: 'Downgrade or duplicate version blocked by SemVer policy', updated: false };
+  }
+
   const updatesDir = path.join(app.getPath('userData'), 'updates');
   const userDistDir = path.join(app.getPath('userData'), 'current_dist');
 
@@ -470,7 +520,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
         fs.cpSync(sourceDistDir, userDistDir, { recursive: true, force: true });
 
         const activeManifest = {
-          version: version || '4.5.7',
+          version: version || '4.6.1',
           gitCommit: gitCommit || 'latest',
           appliedAt: Date.now(),
           sourcePackage: zipToApply,

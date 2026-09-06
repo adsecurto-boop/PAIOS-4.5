@@ -5,6 +5,8 @@ import {
   getRunningPlatform,
   VersionManifest,
   DownloadProgress,
+  compareSemVer,
+  isSemVerGreater,
 } from '../../src/services/UpdateService';
 
 describe('UpdateService Unit Tests', () => {
@@ -21,9 +23,26 @@ describe('UpdateService Unit Tests', () => {
     expect(['electron', 'android', 'web']).toContain(platform);
   });
 
-  it('checks for updates and parses newer version manifest', async () => {
+  it('correctly compares SemVer versions and detects greater versions', () => {
+    expect(isSemVerGreater('4.6.2', '4.6.1')).toBe(true);
+    expect(isSemVerGreater('4.7.0', '4.6.1')).toBe(true);
+    expect(isSemVerGreater('5.0.0', '4.6.1')).toBe(true);
+    expect(isSemVerGreater('v4.6.2-beta.1', '4.6.1')).toBe(true);
+
+    expect(isSemVerGreater('4.6.1', '4.6.1')).toBe(false);
+    expect(isSemVerGreater('v4.6.1', '4.6.1')).toBe(false);
+    expect(isSemVerGreater('4.6.0', '4.6.1')).toBe(false);
+    expect(isSemVerGreater('4.5.7', '4.6.1')).toBe(false);
+    expect(isSemVerGreater('2.0.0', '4.6.1')).toBe(false);
+
+    expect(compareSemVer('4.6.1', '4.6.1')).toBe(0);
+    expect(compareSemVer('4.6.2', '4.6.1')).toBe(1);
+    expect(compareSemVer('4.5.7', '4.6.1')).toBe(-1);
+  });
+
+  it('checks for updates and parses strictly newer version manifest', async () => {
     const mockManifest: VersionManifest = {
-      version: '2.0.0',
+      version: '5.0.0',
       buildNumber: '42',
       buildTimestamp: Date.now() + 100000,
       gitCommit: 'fe981a3',
@@ -47,8 +66,43 @@ describe('UpdateService Unit Tests', () => {
 
     const res = await UpdateService.checkForUpdates('/api/version');
     expect(res.updateAvailable).toBe(true);
-    expect(res.manifest.version).toBe('2.0.0');
+    expect(res.manifest.version).toBe('5.0.0');
     expect(res.manifest.gitCommit).toBe('fe981a3');
+  });
+
+  it('strictly blocks downgrade attempts when remote version is older (4.5.7 or 4.6.0)', async () => {
+    const olderManifest: VersionManifest = {
+      version: '4.5.7',
+      buildNumber: '8',
+      buildTimestamp: Date.now() + 50000,
+      gitCommit: 'older123',
+      releaseNotes: 'Outdated release asset',
+    };
+
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => olderManifest,
+    } as any);
+
+    const res = await UpdateService.checkForUpdates('/api/version');
+    expect(res.updateAvailable).toBe(false);
+    expect(res.manifest.version).toBe('4.5.7');
+  });
+
+  it('does not prompt to update when remote commit differs but version is equal (4.6.1)', async () => {
+    const sameVersionManifest: VersionManifest = {
+      version: '4.6.1',
+      buildTimestamp: Date.now() + 50000,
+      gitCommit: 'different_sha_999',
+    };
+
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => sameVersionManifest,
+    } as any);
+
+    const res = await UpdateService.checkForUpdates('/api/version');
+    expect(res.updateAvailable).toBe(false);
   });
 
   it('correctly reports no update when version and commit match current', async () => {
@@ -63,7 +117,7 @@ describe('UpdateService Unit Tests', () => {
       json: async () => currentManifest,
     } as any);
 
-    const res = await UpdateService.checkForUpdates();
+    const res = await UpdateService.checkForUpdates('/api/version');
     expect(res.updateAvailable).toBe(false);
   });
 
@@ -96,7 +150,7 @@ describe('UpdateService Unit Tests', () => {
 
     const result = await UpdateService.downloadUpdate(
       {
-        version: '1.1.0',
+        version: '4.7.0',
         buildTimestamp: Date.now(),
         gitCommit: 'abc1234',
         platforms: {
@@ -121,7 +175,7 @@ describe('UpdateService Unit Tests', () => {
     await expect(
       UpdateService.downloadUpdate(
         {
-          version: '1.2.0',
+          version: '4.7.0',
           buildTimestamp: Date.now(),
           gitCommit: 'abc999',
         },

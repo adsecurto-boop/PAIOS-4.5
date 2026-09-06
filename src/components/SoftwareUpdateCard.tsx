@@ -52,7 +52,7 @@ export const SoftwareUpdateCard: React.FC = () => {
     setIsChecking(true);
     setStatusMessage(null);
     try {
-      const result = await UpdateService.checkForUpdates(customServerUrl || undefined);
+      const result = await UpdateService.checkForUpdates(customServerUrl || undefined, { forceCheck: true });
       setUpdateAvailable(result.updateAvailable);
       setServerManifest(result.manifest);
       setLastCheckTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -62,7 +62,7 @@ export const SoftwareUpdateCard: React.FC = () => {
           `New build v${result.manifest.version} (Commit ${result.manifest.gitCommit}) is available on main branch!`
         );
       } else {
-        setStatusMessage(`Your PAIOS application is up to date on commit ${result.manifest.gitCommit}.`);
+        setStatusMessage(`Your PAIOS application is up to date on version v${CURRENT_CLIENT_VERSION.version}.`);
       }
     } catch (err: any) {
       setStatusMessage('Unable to reach update server. Please check your network connection.');
@@ -274,7 +274,7 @@ export const SoftwareUpdateCard: React.FC = () => {
           <div className="flex items-center justify-between text-xs text-slate-300">
             <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-              Downloading v{serverManifest?.version || '4.5.7'} ({downloadProgress.percent}%)
+              Downloading v{serverManifest?.version || '4.6.1'} ({downloadProgress.percent}%)
             </span>
             <span className="font-mono text-[11px] text-slate-400">
               {formatBytes(downloadProgress.transferredBytes)} / {formatBytes(downloadProgress.totalBytes)}

@@ -516,7 +516,7 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
                 Money Manager &amp; Budget Analyzer Pro
               </h2>
               <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-600/50 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-amber-300" /> Pro Wealth Engine v4.5.7
+                <Sparkles className="w-3 h-3 text-amber-300" /> Pro Wealth Engine v4.6.1
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-1">

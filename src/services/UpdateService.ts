@@ -49,10 +49,76 @@ const getStoredActiveCommit = (): string | null => {
   return null;
 };
 
+/**
+ * Strict SemVer parser and comparator
+ * Strips leading 'v', build metadata (+...), and pre-releases (-...)
+ * Returns:
+ *   1 if v1 > v2
+ *  -1 if v1 < v2
+ *   0 if v1 === v2
+ */
+export function compareSemVer(v1: string, v2: string): number {
+  const parse = (v: string): number[] => {
+    if (!v) return [0, 0, 0];
+    const cleaned = v.trim().replace(/^v/i, '').split('-')[0].split('+')[0];
+    const parts = cleaned.split('.').map((p) => {
+      const num = parseInt(p, 10);
+      return isNaN(num) ? 0 : num;
+    });
+    while (parts.length < 3) parts.push(0);
+    return parts.slice(0, 3);
+  };
+
+  const [maj1, min1, patch1] = parse(v1);
+  const [maj2, min2, patch2] = parse(v2);
+
+  if (maj1 !== maj2) return maj1 > maj2 ? 1 : -1;
+  if (min1 !== min2) return min1 > min2 ? 1 : -1;
+  if (patch1 !== patch2) return patch1 > patch2 ? 1 : -1;
+  return 0;
+}
+
+export function isSemVerGreater(remote: string, current: string): boolean {
+  return compareSemVer(remote, current) > 0;
+}
+
+/**
+ * Check whether the running environment is local development
+ */
+export function isDevelopmentEnvironment(): boolean {
+  // Test environments should not be considered interactive dev environments
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') {
+    return false;
+  }
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.MODE === 'test') {
+    return false;
+  }
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV) {
+    return true;
+  }
+  if (
+    typeof process !== 'undefined' &&
+    process.env?.NODE_ENV &&
+    process.env.NODE_ENV !== 'production'
+  ) {
+    return true;
+  }
+  return false;
+}
+
 const getStoredActiveVersion = (): string | null => {
   if (typeof window !== 'undefined') {
     try {
-      return localStorage.getItem('paios_active_version');
+      const stored = localStorage.getItem('paios_active_version');
+      const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.6.1';
+      // Never honor a stored version if it is older than or equal to the compiled code version!
+      if (stored && isSemVerGreater(stored, compiled)) {
+        return stored;
+      } else if (stored) {
+        // Clean up stale downgraded cache from localStorage
+        localStorage.removeItem('paios_active_version');
+        localStorage.removeItem('paios_active_git_commit');
+      }
     } catch (e) {}
   }
   return null;
@@ -60,11 +126,11 @@ const getStoredActiveVersion = (): string | null => {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.5.7'),
-  buildNumber: '8',
+  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.6.1'),
+  buildNumber: '9',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
-  gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'f4b9e27'),
-  releaseNotes: 'PAIOS v4.5.7: Health Schedule Synchronization, OS Native Toast Notifications, AI Prompt Draft Persistence & Conversational Dose Adherence Execution',
+  gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'c3249c0'),
+  releaseNotes: 'PAIOS v4.6.1: Balance Sheet Cashflow Routing, Savings Pots Isolation, Downgrade Protection & Net Worth Integrity',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
@@ -189,12 +255,29 @@ export class UpdateService {
   /**
    * Check for updates across multiple sources (GitHub Raw, Atom Feed, Jenkins, Local API)
    */
-  public static async checkForUpdates(customUrl?: string): Promise<{
+  public static async checkForUpdates(
+    customUrl?: string,
+    options?: { forceCheck?: boolean }
+  ): Promise<{
     updateAvailable: boolean;
     manifest: VersionManifest;
     currentVersion: VersionManifest;
   }> {
     const current = CURRENT_CLIENT_VERSION;
+
+    // 0. Disable automatic background update checks during local/dev runs
+    if (isDevelopmentEnvironment() && !options?.forceCheck && !customUrl) {
+      console.log('[UpdateService] Auto-update check suppressed in development environment.');
+      return {
+        updateAvailable: false,
+        manifest: {
+          ...current,
+          releaseNotes: 'PAIOS Development Mode: Auto-update prompts suppressed.',
+        },
+        currentVersion: current,
+      };
+    }
+
     let fetchedManifest: Partial<VersionManifest> | null = null;
     let latestCommitInfo: {
       sha: string;
@@ -262,7 +345,7 @@ export class UpdateService {
     }
 
     // Compose final remote manifest
-    const targetVersion = fetchedManifest?.version || current.version || '4.5.7';
+    const targetVersion = fetchedManifest?.version || current.version || '4.6.1';
     const targetCommit =
       latestCommitInfo?.shortSha ||
       fetchedManifest?.gitCommit ||
@@ -270,7 +353,7 @@ export class UpdateService {
 
     const manifest: VersionManifest = {
       version: targetVersion,
-      buildNumber: fetchedManifest?.buildNumber || 8,
+      buildNumber: fetchedManifest?.buildNumber || 9,
       buildTimestamp:
         latestCommitInfo?.date
           ? new Date(latestCommitInfo.date).getTime()
@@ -282,7 +365,7 @@ export class UpdateService {
       releaseNotes:
         latestCommitInfo?.title ||
         fetchedManifest?.releaseNotes ||
-        'PAIOS v4.5.7: Health Schedule Synchronization, OS Native Toast Notifications, AI Prompt Draft Persistence & Conversational Dose Adherence Execution',
+        'PAIOS v4.6.1: Balance Sheet Cashflow Routing, Savings Pots Isolation, Downgrade Protection & Net Worth Integrity',
       platforms: {
         windows: {
           url:
@@ -304,18 +387,14 @@ export class UpdateService {
     this.cachedManifest = manifest;
 
     const runningCommit = (getStoredActiveCommit() || current.gitCommit || '').trim();
-    const runningVersion = (getStoredActiveVersion() || current.version || '').trim();
+    const runningVersion = (getStoredActiveVersion() || current.version || '4.6.1').trim();
 
-    // Detect if update is available
-    const isNewerCommit =
-      Boolean(targetCommit) &&
-      Boolean(runningCommit) &&
-      targetCommit.toLowerCase().substring(0, 7) !== runningCommit.toLowerCase().substring(0, 7);
-
-    const isNewerVersionStr = Boolean(targetVersion) && targetVersion !== runningVersion;
-    const isNewerTimestamp = (manifest.buildTimestamp || 0) > (current.buildTimestamp || 0);
-
-    const updateAvailable = Boolean(isNewerCommit || isNewerVersionStr);
+    // STRICT SEMVER GATING:
+    // Only prompt to update if targetVersion is STRICTLY GREATER than runningVersion (e.g. 4.6.2 > 4.6.1).
+    // NEVER prompt to update if remote version <= running version (e.g. 4.5.7 <= 4.6.1).
+    // Commit hash differences alone MUST NEVER trigger an update prompt!
+    const isStrictlyNewerVersion = Boolean(targetVersion && isSemVerGreater(targetVersion, runningVersion));
+    const updateAvailable = isStrictlyNewerVersion;
 
     const activeCurrent: VersionManifest = {
       ...current,
@@ -528,11 +607,12 @@ export class UpdateService {
 
     if (typeof window !== 'undefined' && manifest) {
       try {
-        if (manifest.gitCommit) {
-          localStorage.setItem('paios_active_git_commit', manifest.gitCommit);
-        }
-        if (manifest.version) {
+        const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.6.1';
+        if (manifest.version && isSemVerGreater(manifest.version, compiled)) {
           localStorage.setItem('paios_active_version', manifest.version);
+          if (manifest.gitCommit) {
+            localStorage.setItem('paios_active_git_commit', manifest.gitCommit);
+          }
         }
       } catch (e) {}
     }

@@ -61,11 +61,11 @@ app.get('/api/health', (_req, res) => {
 
 // --- IN-APP SOFTWARE UPDATE & VERSION ENDPOINTS ---
 const dynamicVersionManifest: any = {
-  version: '4.5.7',
-  buildNumber: '8',
+  version: '4.6.1',
+  buildNumber: '9',
   buildTimestamp: Date.now(),
-  gitCommit: 'f4b9e27',
-  releaseNotes: 'PAIOS v4.5.7: Health Schedule Synchronization, OS Native Toast Notifications, AI Prompt Draft Persistence & Conversational Dose Adherence Execution',
+  gitCommit: 'c3249c0',
+  releaseNotes: 'PAIOS v4.6.1: Balance Sheet Cashflow Routing, Savings Pots Isolation, Downgrade Protection & Net Worth Integrity',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',

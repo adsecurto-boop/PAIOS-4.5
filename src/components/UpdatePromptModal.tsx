@@ -20,6 +20,7 @@ import {
   DownloadProgress,
   CURRENT_CLIENT_VERSION,
   getRunningPlatform,
+  isSemVerGreater,
 } from '../services/UpdateService';
 
 interface UpdatePromptModalProps {
@@ -33,6 +34,20 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
   onClose,
   serverManifest,
 }) => {
+  const runningVersion =
+    (typeof window !== 'undefined' ? localStorage.getItem('paios_active_version') : null) ||
+    CURRENT_CLIENT_VERSION.version;
+
+  // STRICT SEMVER SUPPRESSION: Suppress modal completely if remote is not strictly greater
+  if (
+    !isOpen ||
+    !serverManifest ||
+    !serverManifest.version ||
+    !isSemVerGreater(serverManifest.version, runningVersion)
+  ) {
+    return null;
+  }
+
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress>({
     percent: 0,
     transferredBytes: 0,
@@ -41,8 +56,6 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [downloadedData, setDownloadedData] = useState<Blob | string | null>(null);
-
-  if (!isOpen || !serverManifest) return null;
 
   const platform = getRunningPlatform();
 
