@@ -291,6 +291,25 @@ export type ExpenseCategory =
   | 'ENTERTAINMENT'
   | 'MISC';
 
+export type InflowDestination =
+  | 'LIQUID_CASH'
+  | 'EMERGENCY_SAVINGS'
+  | 'INVESTED_PORTFOLIO'
+  | 'SAVINGS_POT'
+  | 'DEBT_REDUCTION';
+
+export type OutflowFundingSource =
+  | 'LIQUID_CASH'
+  | 'SAVINGS_POT'
+  | 'EMERGENCY_SAVINGS'
+  | 'DEBT_CLEARANCE'
+  | 'BORROW_DEBT';
+
+export type PotFundingSource =
+  | 'LIQUID_CASH'
+  | 'EMERGENCY_SURPLUS'
+  | 'WINDFALL';
+
 export interface DailyLedgerEntry {
   id: string;
   timestamp: string; // ISO format
@@ -301,6 +320,10 @@ export interface DailyLedgerEntry {
   category: IncomeCategory | ExpenseCategory | BudgetCategory | string;
   notes?: string;
   provenance?: 'MANUAL' | 'AI_EXTRACTED' | 'SWEEP';
+  targetDestination?: InflowDestination | 'DEBT_REDUCTION' | string;
+  fundingSource?: OutflowFundingSource | string;
+  sourcePotId?: string;
+  targetPotId?: string;
 }
 
 export type BudgetCategory =
@@ -342,10 +365,14 @@ export interface BudgetProfile {
   variableIncomeStreams?: VariableIncomeStream[];
   // Balance Sheet & Current Wealth Position
   currentBalance?: number; // Checking / liquid cash balance
+  currentLiquidCash?: number; // Direct alias for checking / available cash
   currentSaved?: number; // Current emergency / liquid savings
+  currentEmergencySavings?: number; // Direct alias for emergency savings
   currentDebt?: number; // Outstanding debt / loans / credit cards
+  currentTotalDebt?: number; // Direct alias for outstanding debt
   debtInterestRate?: number; // Annual debt interest rate % p.a.
   currentInvested?: number; // Current invested portfolio value
+  currentInvestedPortfolio?: number; // Direct alias for invested portfolio
   savingsInterestRate?: number; // Annual savings yield rate % p.a.
   // Target Allocations (e.g. 50/30/20)
   needsTargetPercent?: number; // Target <= 50%
@@ -382,6 +409,10 @@ export interface ExpenseTransaction {
   note?: string;
   notes?: string;
   provenance?: 'MANUAL' | 'AI_EXTRACTED' | 'SWEEP';
+  targetDestination?: InflowDestination | 'DEBT_REDUCTION' | string;
+  fundingSource?: OutflowFundingSource | string;
+  sourcePotId?: string;
+  targetPotId?: string;
 }
 
 export interface DailySurplusRecord {

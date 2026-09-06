@@ -95,6 +95,11 @@ export const MoneyManagerScreen: React.FC = () => {
   const [txDate, setTxDate] = useState(() => getTodayDateString());
   const [txNotes, setTxNotes] = useState('');
   const [txIsNecessity, setTxIsNecessity] = useState(true);
+  const [txTargetDestination, setTxTargetDestination] = useState<'LIQUID_CASH' | 'EMERGENCY_SAVINGS' | 'INVESTED_PORTFOLIO' | 'SAVINGS_POT' | 'DEBT_REDUCTION'>('LIQUID_CASH');
+  const [txTargetPotId, setTxTargetPotId] = useState<string>('');
+  const [txFundingSource, setTxFundingSource] = useState<'LIQUID_CASH' | 'SAVINGS_POT' | 'EMERGENCY_SAVINGS' | 'DEBT_CLEARANCE' | 'BORROW_DEBT'>('LIQUID_CASH');
+  const [txSourcePotId, setTxSourcePotId] = useState<string>('');
+  const [confirmEmergencyOutflow, setConfirmEmergencyOutflow] = useState<boolean>(false);
 
   // Shift Surplus Form State
   const [shiftFromCategory, setShiftFromCategory] = useState<BudgetCategory>('Entertainment');
@@ -107,7 +112,7 @@ export const MoneyManagerScreen: React.FC = () => {
 
   // Today Date & Computations
   const todayStr = getTodayDateString();
-  const analysis = MoneyManagerPlugin.analyzeBudget(profile, transactions, new Date());
+  const analysis = MoneyManagerPlugin.analyzeBudget(profile, transactions, new Date(), pots);
   const todayNetMetrics = MoneyManagerPlugin.calculateDailyNetSavings(transactions, todayStr);
   const todaySurplusInfo = MoneyManagerPlugin.calculateDailySurplus(profile, transactions, todayStr);
   const plannedVsActual = MoneyManagerPlugin.calculatePlannedVsActual(profile, transactions, new Date());
@@ -170,15 +175,29 @@ export const MoneyManagerScreen: React.FC = () => {
     mode: 'DEPOSIT' | 'WITHDRAW',
     source?: 'MANUAL_DEPOSIT' | 'WINDFALL',
     reasonCategory?: WithdrawalReasonCategory,
-    notes?: string
+    notes?: string,
+    fundingSource?: 'LIQUID_CASH' | 'EMERGENCY_SURPLUS' | 'WINDFALL'
   ) => {
     if (mode === 'DEPOSIT') {
-      PAIOSStorage.allocateToPot(potId, amount, source || 'MANUAL_DEPOSIT', notes);
-      // Transfer money from liquid checking balance into savings pot
+      const fund = fundingSource || (source === 'WINDFALL' ? 'WINDFALL' : 'LIQUID_CASH');
+      PAIOSStorage.allocateToPot(potId, amount, fund === 'WINDFALL' ? 'WINDFALL' : 'MANUAL_DEPOSIT', notes);
+
+      let balance = profile.currentBalance ?? profile.currentLiquidCash ?? 0;
+      let saved = profile.currentSaved ?? profile.currentEmergencySavings ?? 0;
+
+      if (fund === 'LIQUID_CASH') {
+        balance = Math.max(0, balance - amount);
+      } else if (fund === 'EMERGENCY_SURPLUS') {
+        saved = Math.max(0, saved - amount);
+      }
+      // If WINDFALL, do not decrement liquid or emergency savings
+
       const updatedProfile: BudgetProfile = {
         ...profile,
-        currentBalance: Math.max(0, (profile.currentBalance || 0) - amount),
-        currentSaved: (profile.currentSaved || 0) + amount,
+        currentBalance: balance,
+        currentLiquidCash: balance,
+        currentSaved: saved,
+        currentEmergencySavings: saved,
         updatedAtMillis: Date.now(),
       };
       PAIOSStorage.saveBudgetProfile(updatedProfile);
@@ -209,6 +228,10 @@ export const MoneyManagerScreen: React.FC = () => {
   const handleAddTransaction = (e: React.FormEvent) => {
     e.preventDefault();
     if (!txTitle.trim() || !txAmount) return;
+    if (txType === 'OUTFLOW' && txFundingSource === 'EMERGENCY_SAVINGS' && !confirmEmergencyOutflow) {
+      alert('Please confirm that this is an emergency deduction from emergency reserves.');
+      return;
+    }
 
     const amt = Math.max(0.01, Number(txAmount));
     const now = new Date();
@@ -225,19 +248,62 @@ export const MoneyManagerScreen: React.FC = () => {
       timestampMillis: Date.now(),
       isNecessity: txType === 'OUTFLOW' ? txIsNecessity : false,
       notes: txNotes.trim() || undefined,
+      targetDestination: txType === 'INFLOW' ? txTargetDestination : undefined,
+      targetPotId: txType === 'INFLOW' && txTargetDestination === 'SAVINGS_POT' ? txTargetPotId : undefined,
+      fundingSource: txType === 'OUTFLOW' ? txFundingSource : undefined,
+      sourcePotId:
+        txType === 'OUTFLOW' && txFundingSource === 'SAVINGS_POT'
+          ? txSourcePotId
+          : txType === 'INFLOW' && txTargetDestination === 'SAVINGS_POT'
+          ? txTargetPotId
+          : undefined,
     };
 
+    // Apply deterministic balance sheet routing
+    const { updatedProfile, updatedPots, affectedPotId } =
+      MoneyManagerPlugin.applyTransactionBalanceRouting(profile, tx, pots);
+
+    // Save transaction
     PAIOSStorage.saveExpenseTransaction(tx);
     setTransactions(PAIOSStorage.getExpenseTransactions());
+
+    // Save profile with updated balances
+    PAIOSStorage.saveBudgetProfile(updatedProfile);
+    setProfile(updatedProfile);
+
+    // If a pot was affected, persist pots
+    if (affectedPotId) {
+      const potToSave = updatedPots.find((p) => p.id === affectedPotId);
+      if (potToSave) {
+        PAIOSStorage.saveSavingsPot(potToSave);
+      }
+      setPots(PAIOSStorage.getSavingsPots());
+    }
 
     // Reset form
     setTxTitle('');
     setTxAmount('');
     setTxNotes('');
+    setConfirmEmergencyOutflow(false);
     setShowAddTransactionModal(false);
   };
 
   const handleDeleteTransaction = (id: string) => {
+    const txToDelete = transactions.find((t) => t.id === id);
+    if (txToDelete) {
+      // Reversibly adjust balances
+      const { updatedProfile, updatedPots, affectedPotId } =
+        MoneyManagerPlugin.applyTransactionBalanceRouting(profile, txToDelete, pots, true);
+      PAIOSStorage.saveBudgetProfile(updatedProfile);
+      setProfile(updatedProfile);
+      if (affectedPotId) {
+        const potToSave = updatedPots.find((p) => p.id === affectedPotId);
+        if (potToSave) {
+          PAIOSStorage.saveSavingsPot(potToSave);
+        }
+        setPots(PAIOSStorage.getSavingsPots());
+      }
+    }
     PAIOSStorage.deleteExpenseTransaction(id);
     setTransactions(PAIOSStorage.getExpenseTransactions());
   };
@@ -512,6 +578,11 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
             >
               {profile.currency}{(analysis.netWorth || 0).toLocaleString()}
             </strong>
+            {totalInPots > 0 && (
+              <span className="text-[10px] text-cyan-400 font-mono hidden sm:inline">
+                (incl. {profile.currency}{totalInPots.toLocaleString()} in pots)
+              </span>
+            )}
           </div>
         </div>
 
@@ -1400,6 +1471,213 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
                 </div>
               </div>
 
+              {/* Inflow Destination Selector */}
+              {txType === 'INFLOW' && (
+                <div className="space-y-2 bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                  <label className="text-xs font-semibold text-emerald-400 block">
+                    Deposit Funds To (Mandatory)
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTxTargetDestination('LIQUID_CASH')}
+                      className={`py-2 px-2 text-center rounded-xl text-xs font-semibold transition-all border ${
+                        txTargetDestination === 'LIQUID_CASH'
+                          ? 'bg-emerald-600 text-white border-emerald-500 shadow'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      Liquid Cash
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTxTargetDestination('EMERGENCY_SAVINGS')}
+                      className={`py-2 px-2 text-center rounded-xl text-xs font-semibold transition-all border ${
+                        txTargetDestination === 'EMERGENCY_SAVINGS'
+                          ? 'bg-teal-600 text-white border-teal-500 shadow'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      Emergency Fund
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTxTargetDestination('INVESTED_PORTFOLIO')}
+                      className={`py-2 px-2 text-center rounded-xl text-xs font-semibold transition-all border ${
+                        txTargetDestination === 'INVESTED_PORTFOLIO'
+                          ? 'bg-indigo-600 text-white border-indigo-500 shadow'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      Invested Portfolio
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTxTargetDestination('SAVINGS_POT');
+                        if (!txTargetPotId && pots.length > 0) {
+                          setTxTargetPotId(pots[0].id);
+                        }
+                      }}
+                      className={`py-2 px-2 text-center rounded-xl text-xs font-semibold transition-all border ${
+                        txTargetDestination === 'SAVINGS_POT'
+                          ? 'bg-cyan-600 text-white border-cyan-500 shadow'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      Savings Pot
+                    </button>
+                  </div>
+
+                  {txTargetDestination === 'SAVINGS_POT' && (
+                    <div className="pt-2 animate-fade-in">
+                      <label className="text-xs font-semibold text-cyan-300 block mb-1">
+                        Choose Target Savings Pot
+                      </label>
+                      {pots.length === 0 ? (
+                        <p className="text-xs text-amber-400">No active savings pots found. Please create a pot first.</p>
+                      ) : (
+                        <select
+                          value={txTargetPotId || pots[0]?.id}
+                          onChange={(e) => setTxTargetPotId(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-900 border border-cyan-500/40 rounded-xl text-xs text-white"
+                        >
+                          {pots.map((pot) => (
+                            <option key={pot.id} value={pot.id}>
+                              {pot.title} (Current: {profile.currency}{pot.currentAmount.toLocaleString()} / Target: {profile.currency}{pot.targetAmount.toLocaleString()})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Outflow Source Selector */}
+              {txType === 'OUTFLOW' && (
+                <div className="space-y-2 bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                  <label className="text-xs font-semibold text-indigo-400 block">
+                    Paid From (Mandatory)
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTxFundingSource('LIQUID_CASH')}
+                      className={`py-2 px-1.5 text-center rounded-xl text-[11px] font-semibold transition-all border ${
+                        txFundingSource === 'LIQUID_CASH'
+                          ? 'bg-indigo-600 text-white border-indigo-500 shadow'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      Liquid Cash
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTxFundingSource('SAVINGS_POT');
+                        if (!txSourcePotId && pots.length > 0) {
+                          setTxSourcePotId(pots[0].id);
+                        }
+                      }}
+                      className={`py-2 px-1.5 text-center rounded-xl text-[11px] font-semibold transition-all border ${
+                        txFundingSource === 'SAVINGS_POT'
+                          ? 'bg-cyan-600 text-white border-cyan-500 shadow'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      Savings Pot
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTxFundingSource('EMERGENCY_SAVINGS')}
+                      className={`py-2 px-1.5 text-center rounded-xl text-[11px] font-semibold transition-all border ${
+                        txFundingSource === 'EMERGENCY_SAVINGS'
+                          ? 'bg-rose-600 text-white border-rose-500 shadow'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      Emergency Fund
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTxFundingSource('DEBT_CLEARANCE')}
+                      className={`py-2 px-1.5 text-center rounded-xl text-[11px] font-semibold transition-all border ${
+                        txFundingSource === 'DEBT_CLEARANCE'
+                          ? 'bg-emerald-600 text-white border-emerald-500 shadow'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      Loan / EMI
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTxFundingSource('BORROW_DEBT')}
+                      className={`py-2 px-1.5 text-center rounded-xl text-[11px] font-semibold transition-all border ${
+                        txFundingSource === 'BORROW_DEBT'
+                          ? 'bg-amber-600 text-white border-amber-500 shadow'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      Credit Card
+                    </button>
+                  </div>
+
+                  {txFundingSource === 'SAVINGS_POT' && (
+                    <div className="pt-2 animate-fade-in">
+                      <label className="text-xs font-semibold text-cyan-300 block mb-1">
+                        Choose Deducting Savings Pot
+                      </label>
+                      {pots.length === 0 ? (
+                        <p className="text-xs text-amber-400">No active savings pots found.</p>
+                      ) : (
+                        <select
+                          value={txSourcePotId || pots[0]?.id}
+                          onChange={(e) => setTxSourcePotId(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-900 border border-cyan-500/40 rounded-xl text-xs text-white"
+                        >
+                          {pots.map((pot) => (
+                            <option key={pot.id} value={pot.id}>
+                              {pot.title} (Available: {profile.currency}{pot.currentAmount.toLocaleString()})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  {txFundingSource === 'EMERGENCY_SAVINGS' && (
+                    <div className="p-3 bg-rose-950/60 border border-rose-500/40 rounded-xl space-y-2 animate-fade-in">
+                      <div className="flex items-center gap-2 text-rose-300 text-xs font-bold">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span>Emergency Reserve Deduction Confirmation</span>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={confirmEmergencyOutflow}
+                          onChange={(e) => setConfirmEmergencyOutflow(e.target.checked)}
+                          className="rounded bg-slate-900 border-rose-500 text-rose-600"
+                        />
+                        <span>I confirm this is an authentic emergency expenditure deducting from emergency reserves.</span>
+                      </label>
+                    </div>
+                  )}
+
+                  {txFundingSource === 'LIQUID_CASH' && Number(txAmount) > (profile.currentBalance || 0) && (
+                    <div className="p-3 bg-amber-950/60 border border-amber-500/40 rounded-xl flex items-start gap-2 text-xs text-amber-200 animate-fade-in">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block">Overdraft / Deficit Warning</strong>
+                        <span>
+                          Expense amount ({profile.currency}{Number(txAmount)}) exceeds available liquid cash ({profile.currency}{(profile.currentBalance || 0).toLocaleString()}). Your liquid balance will go into deficit.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1">Date</label>
@@ -1654,6 +1932,8 @@ Provide a concise, 4-point actionable strategic optimization plan to eliminate d
         currency={profile.currency}
         averageDailySurplus={avgSurplus}
         dailySafeBudget={todaySurplusInfo.dailyBudget}
+        availableLiquidCash={profile.currentBalance ?? profile.currentLiquidCash ?? 0}
+        availableEmergencySavings={profile.currentSaved ?? profile.currentEmergencySavings ?? 0}
         onConfirm={handleConfirmPotAction}
       />
     </div>

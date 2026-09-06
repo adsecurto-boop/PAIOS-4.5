@@ -24,10 +24,14 @@ export const DEFAULT_BUDGET_PROFILE: BudgetProfile = {
   salaryCycleDay: 1,
   // Balance Sheet & Wealth Base
   currentBalance: 3500,
+  currentLiquidCash: 3500,
   currentSaved: 8000,
+  currentEmergencySavings: 8000,
   currentDebt: 12000,
+  currentTotalDebt: 12000,
   debtInterestRate: 12, // 12% p.a. debt rate
   currentInvested: 15000,
+  currentInvestedPortfolio: 15000,
   savingsInterestRate: 4, // 4% p.a. savings yield
   // Necessities & Fixed Obligations
   foodMonthly: 800,
@@ -147,7 +151,8 @@ export class MoneyManagerPlugin {
   public static analyzeBudget(
     profile: BudgetProfile,
     transactions: ExpenseTransaction[] = [],
-    targetDate: Date = new Date()
+    targetDate: Date = new Date(),
+    pots: SavingsPot[] = []
   ): BudgetAnalysisResult {
     const cycle = this.calculateCycleDates(profile.salaryCycleDay, targetDate);
 
@@ -190,12 +195,15 @@ export class MoneyManagerPlugin {
     const wantsRatio = Math.round((totalFreeMoney / baseSalary) * 100);
     const savingsRatio = Math.round((totalPlannedInvestments / baseSalary) * 100);
 
-    // 6. Net Worth & Balance Sheet Metrics
-    const totalAssets =
-      (profile.currentBalance || 0) +
-      (profile.currentSaved || 0) +
-      (profile.currentInvested || 0);
-    const totalDebt = profile.currentDebt || 0;
+    // 6. Net Worth & Balance Sheet Metrics (Unified Formula):
+    // Net Worth = (Liquid Cash + Emergency Savings + Invested Portfolio + Sum(Savings Pots)) - Outstanding Debt
+    const totalPots = (pots || []).reduce((acc, p) => acc + (p.currentAmount || 0), 0);
+    const liquidCash = profile.currentBalance ?? profile.currentLiquidCash ?? 0;
+    const emergencySavings = profile.currentSaved ?? profile.currentEmergencySavings ?? 0;
+    const invested = profile.currentInvested ?? profile.currentInvestedPortfolio ?? 0;
+    const totalDebt = profile.currentDebt ?? profile.currentTotalDebt ?? 0;
+
+    const totalAssets = liquidCash + emergencySavings + invested + totalPots;
     const netWorth = totalAssets - totalDebt;
 
     // 7. Debt Payoff Timeline quick estimation
@@ -264,6 +272,111 @@ export class MoneyManagerPlugin {
       appliedDailyAdjustment,
       effectiveDailyBudget,
       recommendations,
+    };
+  }
+
+  /**
+   * Deterministically routes Inflows, Outflows, and Pot funding across balance sheet positions
+   */
+  public static applyTransactionBalanceRouting(
+    profile: BudgetProfile,
+    tx: ExpenseTransaction,
+    pots: SavingsPot[] = [],
+    reverse: boolean = false
+  ): {
+    updatedProfile: BudgetProfile;
+    updatedPots: SavingsPot[];
+    affectedPotId?: string;
+  } {
+    const mult = reverse ? -1 : 1;
+    const amt = tx.amount;
+    const updatedPots = pots.map((p) => ({ ...p }));
+    let affectedPotId: string | undefined = undefined;
+
+    let balance = profile.currentBalance ?? profile.currentLiquidCash ?? 0;
+    let saved = profile.currentSaved ?? profile.currentEmergencySavings ?? 0;
+    let invested = profile.currentInvested ?? profile.currentInvestedPortfolio ?? 0;
+    let debt = profile.currentDebt ?? profile.currentTotalDebt ?? 0;
+
+    if (tx.type === 'INFLOW') {
+      const destination = tx.targetDestination || 'LIQUID_CASH';
+      if (destination === 'LIQUID_CASH') {
+        balance += amt * mult;
+      } else if (destination === 'EMERGENCY_SAVINGS') {
+        saved += amt * mult;
+      } else if (destination === 'INVESTED_PORTFOLIO') {
+        invested += amt * mult;
+      } else if (destination === 'DEBT_REDUCTION') {
+        debt = Math.max(0, debt - amt * mult);
+      } else if (destination === 'SAVINGS_POT') {
+        const potId = tx.targetPotId || tx.sourcePotId;
+        if (potId) {
+          const pIdx = updatedPots.findIndex((p) => p.id === potId);
+          if (pIdx >= 0) {
+            affectedPotId = potId;
+            const newPotAmt = Math.max(0, updatedPots[pIdx].currentAmount + amt * mult);
+            updatedPots[pIdx] = {
+              ...updatedPots[pIdx],
+              currentAmount: newPotAmt,
+              isCompleted: newPotAmt >= updatedPots[pIdx].targetAmount,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+        }
+      }
+    } else {
+      // OUTFLOW
+      const source =
+        tx.fundingSource ||
+        tx.targetDestination ||
+        (tx.category === 'LOAN_EMI' ? 'DEBT_CLEARANCE' : 'LIQUID_CASH');
+
+      if (source === 'LIQUID_CASH') {
+        balance -= amt * mult;
+      } else if (source === 'SAVINGS_POT') {
+        const potId = tx.sourcePotId || tx.targetPotId;
+        if (potId) {
+          const pIdx = updatedPots.findIndex((p) => p.id === potId);
+          if (pIdx >= 0) {
+            affectedPotId = potId;
+            const newPotAmt = Math.max(0, updatedPots[pIdx].currentAmount - amt * mult);
+            updatedPots[pIdx] = {
+              ...updatedPots[pIdx],
+              currentAmount: newPotAmt,
+              isCompleted: newPotAmt >= updatedPots[pIdx].targetAmount,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+        }
+      } else if (source === 'EMERGENCY_SAVINGS') {
+        saved = Math.max(0, saved - amt * mult);
+      } else if (source === 'DEBT_CLEARANCE' || tx.category === 'LOAN_EMI') {
+        // Reduces outstanding debt AND deducts from liquid cash
+        debt = Math.max(0, debt - amt * mult);
+        balance -= amt * mult;
+      } else if (source === 'BORROW_DEBT') {
+        // Paid via borrowed funds / credit card -> increases debt, does not decrease cash
+        debt += amt * mult;
+      }
+    }
+
+    const updatedProfile: BudgetProfile = {
+      ...profile,
+      currentBalance: balance,
+      currentLiquidCash: balance,
+      currentSaved: saved,
+      currentEmergencySavings: saved,
+      currentInvested: invested,
+      currentInvestedPortfolio: invested,
+      currentDebt: debt,
+      currentTotalDebt: debt,
+      updatedAtMillis: Date.now(),
+    };
+
+    return {
+      updatedProfile,
+      updatedPots,
+      affectedPotId,
     };
   }
 

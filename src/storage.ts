@@ -1935,7 +1935,22 @@ ${journal.map((j) => `- [${formatTime(j.createdAtMillis)}] "${j.title}" (Mood Sc
     return load<BudgetProfile>(STORAGE_KEYS.BUDGET_PROFILE, DEFAULT_BUDGET_PROFILE);
   },
   saveBudgetProfile(profile: BudgetProfile): void {
-    save(STORAGE_KEYS.BUDGET_PROFILE, profile);
+    const bal = profile.currentBalance ?? profile.currentLiquidCash ?? 0;
+    const saved = profile.currentSaved ?? profile.currentEmergencySavings ?? 0;
+    const invested = profile.currentInvested ?? profile.currentInvestedPortfolio ?? 0;
+    const debt = profile.currentDebt ?? profile.currentTotalDebt ?? 0;
+    const syncedProfile: BudgetProfile = {
+      ...profile,
+      currentBalance: bal,
+      currentLiquidCash: bal,
+      currentSaved: saved,
+      currentEmergencySavings: saved,
+      currentInvested: invested,
+      currentInvestedPortfolio: invested,
+      currentDebt: debt,
+      currentTotalDebt: debt,
+    };
+    save(STORAGE_KEYS.BUDGET_PROFILE, syncedProfile);
   },
   getExpenseTransactions(): ExpenseTransaction[] {
     return load<ExpenseTransaction[]>(STORAGE_KEYS.EXPENSES, []);
@@ -2165,12 +2180,15 @@ ${journal.map((j) => `- [${formatTime(j.createdAtMillis)}] "${j.title}" (Mood Sc
     };
     this.savePotAllocation(allocation);
 
-    // Update liquid balance and savings balance in budget profile
+    // Update liquid balance in budget profile (funds return to available cash)
     const profile = this.getBudgetProfile();
+    const newBal = (profile.currentBalance ?? profile.currentLiquidCash ?? 0) + withdrawable;
     const updatedProfile: BudgetProfile = {
       ...profile,
-      currentBalance: (profile.currentBalance || 0) + withdrawable,
-      currentSaved: Math.max(0, (profile.currentSaved || 0) - withdrawable),
+      currentBalance: newBal,
+      currentLiquidCash: newBal,
+      currentSaved: profile.currentSaved ?? profile.currentEmergencySavings ?? 0,
+      currentEmergencySavings: profile.currentSaved ?? profile.currentEmergencySavings ?? 0,
       updatedAtMillis: Date.now(),
     };
     this.saveBudgetProfile(updatedProfile);

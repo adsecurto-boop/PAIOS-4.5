@@ -11,13 +11,16 @@ export interface PotDepositWithdrawModalProps {
   currency: string;
   averageDailySurplus?: number;
   dailySafeBudget?: number;
+  availableLiquidCash?: number;
+  availableEmergencySavings?: number;
   onConfirm: (
     potId: string,
     amount: number,
     mode: 'DEPOSIT' | 'WITHDRAW',
     source?: 'MANUAL_DEPOSIT' | 'WINDFALL',
     reasonCategory?: WithdrawalReasonCategory,
-    notes?: string
+    notes?: string,
+    fundingSource?: 'LIQUID_CASH' | 'EMERGENCY_SURPLUS' | 'WINDFALL'
   ) => void;
 }
 
@@ -36,10 +39,13 @@ export const PotDepositWithdrawModal: React.FC<PotDepositWithdrawModalProps> = (
   currency,
   averageDailySurplus = 0,
   dailySafeBudget = 0,
+  availableLiquidCash = 0,
+  availableEmergencySavings = 0,
   onConfirm,
 }) => {
   const [amount, setAmount] = useState('');
   const [source, setSource] = useState<'MANUAL_DEPOSIT' | 'WINDFALL'>('MANUAL_DEPOSIT');
+  const [fundingSource, setFundingSource] = useState<'LIQUID_CASH' | 'EMERGENCY_SURPLUS' | 'WINDFALL'>('LIQUID_CASH');
   const [reasonCategory, setReasonCategory] =
     useState<WithdrawalReasonCategory>('MEDICAL_EMERGENCY');
   const [notes, setNotes] = useState('');
@@ -48,6 +54,7 @@ export const PotDepositWithdrawModal: React.FC<PotDepositWithdrawModalProps> = (
     setAmount('');
     setNotes('');
     setSource('MANUAL_DEPOSIT');
+    setFundingSource('LIQUID_CASH');
     setReasonCategory('MEDICAL_EMERGENCY');
   }, [isOpen, pot, mode]);
 
@@ -77,9 +84,10 @@ export const PotDepositWithdrawModal: React.FC<PotDepositWithdrawModalProps> = (
       pot.id,
       numAmount,
       mode,
-      source,
+      fundingSource === 'WINDFALL' ? 'WINDFALL' : 'MANUAL_DEPOSIT',
       mode === 'WITHDRAW' ? reasonCategory : undefined,
-      notes.trim() || undefined
+      notes.trim() || undefined,
+      fundingSource
     );
     onClose();
   };
@@ -139,31 +147,47 @@ export const PotDepositWithdrawModal: React.FC<PotDepositWithdrawModalProps> = (
           {/* Deposit Source Pill (Deposit Mode Only) */}
           {mode === 'DEPOSIT' ? (
             <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">Deposit Type</label>
-              <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
+              <label className="text-xs font-semibold text-slate-300 block mb-1">Fund Pot From</label>
+              <div className="grid grid-cols-3 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
                 <button
                   type="button"
-                  onClick={() => setSource('MANUAL_DEPOSIT')}
-                  className={`py-1.5 rounded-lg transition-all ${
-                    source === 'MANUAL_DEPOSIT'
+                  onClick={() => setFundingSource('LIQUID_CASH')}
+                  className={`py-1.5 px-2 text-center rounded-lg transition-all ${
+                    fundingSource === 'LIQUID_CASH'
                       ? 'bg-indigo-600 text-white shadow'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  Manual Deposit
+                  Liquid Cash
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSource('WINDFALL')}
-                  className={`py-1.5 rounded-lg transition-all ${
-                    source === 'WINDFALL'
+                  onClick={() => setFundingSource('EMERGENCY_SURPLUS')}
+                  className={`py-1.5 px-2 text-center rounded-lg transition-all ${
+                    fundingSource === 'EMERGENCY_SURPLUS'
+                      ? 'bg-teal-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Emergency Surplus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFundingSource('WINDFALL')}
+                  className={`py-1.5 px-2 text-center rounded-lg transition-all ${
+                    fundingSource === 'WINDFALL'
                       ? 'bg-amber-600 text-white shadow'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  Bonus / Windfall
+                  Direct Windfall
                 </button>
               </div>
+              <p className="text-[11px] text-slate-400 mt-1 px-1">
+                {fundingSource === 'LIQUID_CASH' && 'Deducts from Available Liquid Cash / Checking.'}
+                {fundingSource === 'EMERGENCY_SURPLUS' && 'Transfers surplus from Emergency Savings into this goal pot.'}
+                {fundingSource === 'WINDFALL' && 'Fresh direct windfall. Increments pot directly without decreasing liquid checking.'}
+              </p>
             </div>
           ) : (
             /* Withdrawal Emergency Reasoning Friction */
