@@ -709,6 +709,9 @@ export const App: React.FC = () => {
           userContext: contextStr,
           modelName: settings.preferredModel,
           customApiKey: settings.customApiKey,
+          aiProvider: settings.aiProvider,
+          ollamaModel: settings.ollamaModel,
+          ollamaBaseUrl: settings.ollamaBaseUrl,
           role: options?.role || 'productivity',
           taskComplexity: options?.taskComplexity || 'general',
           history: currentHistory,
@@ -752,6 +755,9 @@ export const App: React.FC = () => {
         userContext: contextStr,
         modelName: settings.preferredModel,
         customApiKey: settings.customApiKey,
+        aiProvider: settings.aiProvider,
+        ollamaModel: settings.ollamaModel,
+        ollamaBaseUrl: settings.ollamaBaseUrl,
         role: options?.role || 'productivity',
         taskComplexity: options?.taskComplexity || 'general',
         history: currentHistory,
@@ -789,6 +795,9 @@ export const App: React.FC = () => {
           userContext: contextStr,
           modelName: settings.preferredModel,
           customApiKey: settings.customApiKey,
+          aiProvider: settings.aiProvider,
+          ollamaModel: settings.ollamaModel,
+          ollamaBaseUrl: settings.ollamaBaseUrl,
           role: options?.role || 'productivity',
           taskComplexity: options?.taskComplexity || 'general',
           history: currentHistory,
@@ -1209,6 +1218,7 @@ export const App: React.FC = () => {
                   onOpenQuickCapture={() => setShowQuickCaptureModal(true)}
                   onOpenStartActivity={() => setShowStartActivityModal(true)}
                   onOpenAddTask={() => setShowTaskModal(true)}
+                  settings={settings}
                 />
               )}
 

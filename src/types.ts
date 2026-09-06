@@ -200,12 +200,46 @@ export interface AIMessage {
 
 export type AiChatMessage = AIMessage;
 
+export type AiProviderType = 'GEMINI' | 'OLLAMA' | 'gemini' | 'ollama' | string;
+
+export interface OllamaHealthStatus {
+  available: boolean;
+  baseUrl: string;
+  models: string[];
+  hasModel: boolean;
+  model: string;
+  error?: string;
+}
+
+export interface AssistantStatusResponse {
+  provider: string;
+  model: string;
+  available: boolean;
+  localEndpoint: string;
+  ollamaStatus?: OllamaHealthStatus;
+  geminiStatus?: {
+    available: boolean;
+    hasApiKey: boolean;
+  };
+}
+
+export interface AssistantTestResponse {
+  success: boolean;
+  provider: string;
+  model: string;
+  reply?: string;
+  latencyMs?: number;
+  error?: string;
+}
+
 export interface UserSettings {
   id: number;
   userName: string;
   aiProvider: string;
   aiModel: string;
   customApiKey: string;
+  ollamaBaseUrl?: string;       // e.g. "http://localhost:11434"
+  ollamaModel?: string;         // e.g. "qwen2.5:7b"
   themeMode: "SYSTEM" | "DARK" | "LIGHT";
   morningNotificationEnabled: boolean;
   eveningNotificationEnabled: boolean;

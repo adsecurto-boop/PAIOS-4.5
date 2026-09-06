@@ -21,9 +21,11 @@ import {
   ShieldCheck,
   Flame,
   MessageSquare,
-  Plus
+  Plus,
+  HardDrive,
 } from 'lucide-react';
-import { AiChatMessage, ActivityLog, NavTab } from '../types';
+import { AiChatMessage, ActivityLog, NavTab, UserSettings } from '../types';
+import { PAIOSStorage } from '../storage';
 
 export type ChatRole = 'productivity' | 'sdet_mentor' | 'health_specialist' | 'creative_coach';
 export type TaskComplexityMode = 'general' | 'complex' | 'fast';
@@ -41,6 +43,7 @@ interface AiScreenProps {
   onOpenQuickCapture?: () => void;
   onOpenStartActivity?: () => void;
   onOpenAddTask?: () => void;
+  settings?: UserSettings;
 }
 
 const DRAFT_STORAGE_KEY = 'paios_ai_input_draft';
@@ -58,7 +61,11 @@ export const AiScreen: React.FC<AiScreenProps> = ({
   onOpenQuickCapture,
   onOpenStartActivity,
   onOpenAddTask,
+  settings,
 }) => {
+  const effectiveSettings = settings || (typeof window !== 'undefined' ? PAIOSStorage.getSettings() : undefined);
+  const isOllamaActive = effectiveSettings?.aiProvider?.toUpperCase() === 'OLLAMA';
+
   const [inputText, setInputText] = useState(() => {
     if (typeof window !== 'undefined' && window.sessionStorage) {
       try {
@@ -256,6 +263,17 @@ export const AiScreen: React.FC<AiScreenProps> = ({
                   Home
                 </span>
               </h1>
+              {isOllamaActive ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-300 bg-emerald-950/90 border border-emerald-700/80 px-2 py-0.5 rounded-full font-semibold">
+                  <HardDrive className="w-3 h-3 text-emerald-400" />
+                  <span>Local: {effectiveSettings?.ollamaModel || 'qwen2.5:7b'} (Offline)</span>
+                </span>
+              ) : (
+                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-mono text-indigo-300 bg-indigo-950/80 border border-indigo-800/80 px-2 py-0.5 rounded-full font-semibold">
+                  <Sparkles className="w-3 h-3 text-indigo-400" />
+                  <span>Gemini Cloud</span>
+                </span>
+              )}
               <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2 py-0.2 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 Active

@@ -1,11 +1,16 @@
 import { GoogleGenAI } from '@google/genai';
 import { PAIOSStorage } from './storage';
+import { sendOllamaChat, checkOllamaHealth, getEffectiveOllamaModel, getEffectiveOllamaBaseUrl } from './services/ollamaClient';
+
+export { sendOllamaChat, checkOllamaHealth, getEffectiveOllamaModel, getEffectiveOllamaBaseUrl };
 
 export interface AiResponse {
   text: string;
   actionType?: string | null;
   actionPayloadJson?: string | null;
   error?: string;
+  provider?: string;
+  fallback?: boolean;
 }
 
 /**
@@ -62,7 +67,7 @@ export function getEffectiveModel(customModel?: string): string {
   return 'gemini-2.5-flash';
 }
 
-// Client-Side Direct Gemini Call Fallback
+// Client-Side Dual AI Call Engine (Gemini Cloud & Ollama Local Fallback)
 export async function sendClientGeminiChat(params: {
   userText: string;
   userContext?: string;
@@ -71,8 +76,11 @@ export async function sendClientGeminiChat(params: {
   role?: string;
   taskComplexity?: string;
   history?: any[];
+  aiProvider?: string;
+  ollamaModel?: string;
+  ollamaBaseUrl?: string;
 }): Promise<AiResponse> {
-  const { userText, userContext, customApiKey, role, history, modelName } = params;
+  const { userText, userContext, customApiKey, role, history, modelName, aiProvider, ollamaModel, ollamaBaseUrl } = params;
 
   const cleanUserText = (userText || '').trim();
 
@@ -104,12 +112,52 @@ export async function sendClientGeminiChat(params: {
     };
   }
 
+  let storedSettings: any = null;
+  try {
+    storedSettings = PAIOSStorage.getSettings();
+  } catch (e) {}
+
+  const targetProvider = (aiProvider || storedSettings?.aiProvider || 'GEMINI').toLowerCase();
+  const targetOllamaModel = ollamaModel || storedSettings?.ollamaModel || 'qwen2.5:7b';
+  const targetOllamaBaseUrl = ollamaBaseUrl || storedSettings?.ollamaBaseUrl || 'http://localhost:11434';
+
+  // 1. Direct Ollama Execution when user configured Ollama provider
+  if (targetProvider === 'ollama') {
+    return sendOllamaChat({
+      promptText: cleanUserText,
+      userContext,
+      role,
+      history,
+      model: targetOllamaModel,
+      baseUrl: targetOllamaBaseUrl,
+    });
+  }
+
   // Check for client-side environment variable or user-provided key in Settings
   const apiKey = getEffectiveApiKey(customApiKey);
 
   if (!apiKey) {
+    // Attempt graceful local Ollama fallback when no cloud API key is present
+    try {
+      const ollamaFallback = await sendOllamaChat({
+        promptText: cleanUserText,
+        userContext,
+        role,
+        history,
+        model: targetOllamaModel,
+        baseUrl: targetOllamaBaseUrl,
+      });
+      if (!ollamaFallback.error) {
+        return {
+          ...ollamaFallback,
+          provider: 'ollama',
+          fallback: true,
+        };
+      }
+    } catch (e) {}
+
     return {
-      text: 'AI server is operating in standalone mobile/offline mode. To enable AI Chat on this device, please enter your Gemini API Key in Settings.',
+      text: 'AI server is operating in standalone mobile/offline mode. To enable AI Chat on this device, please enter your Gemini API Key in Settings or start local Ollama (qwen2.5:7b).',
       actionType: null,
       actionPayloadJson: null,
     };
@@ -205,8 +253,28 @@ ${userContext || 'No context available.'}
     }
 
     if (!fullText) {
+      // Fall back to local Ollama qwen2.5:7b before failing
+      try {
+        console.warn('Client Gemini calls failed. Falling back to local Ollama...');
+        const ollamaFallback = await sendOllamaChat({
+          promptText: cleanUserText,
+          userContext,
+          role,
+          history,
+          model: targetOllamaModel,
+          baseUrl: targetOllamaBaseUrl,
+        });
+        if (!ollamaFallback.error) {
+          return {
+            ...ollamaFallback,
+            provider: 'ollama',
+            fallback: true,
+          };
+        }
+      } catch (e) {}
+
       return {
-        text: `Unable to connect to Gemini AI services: ${lastError?.message || 'Network Error'}. Please check your connection or API key in Settings.`,
+        text: `Unable to connect to Gemini AI services: ${lastError?.message || 'Network Error'}. Please check your connection, API key, or local Ollama daemon.`,
       };
     }
 

@@ -378,6 +378,8 @@ const initialSettings: UserSettings = {
   aiProvider: 'GEMINI',
   aiModel: 'gemini-3.6-flash',
   customApiKey: '',
+  ollamaBaseUrl: 'http://localhost:11434',
+  ollamaModel: 'qwen2.5:7b',
   themeMode: 'DARK',
   morningNotificationEnabled: true,
   eveningNotificationEnabled: true,

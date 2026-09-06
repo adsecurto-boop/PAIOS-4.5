@@ -14,6 +14,182 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'paios5_ubuntu_sqlite_jwt_secret';
 
+// AI Provider Configurations (Google Gemini Cloud vs. Ollama Local qwen2.5:7b)
+export const PAIOS_AI_PROVIDER = (process.env.PAIOS_AI_PROVIDER || 'gemini').toLowerCase();
+export const PAIOS_OLLAMA_MODEL = process.env.PAIOS_OLLAMA_MODEL || 'qwen2.5:7b';
+export const PAIOS_OLLAMA_BASE_URL = (process.env.PAIOS_OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/+$/, '');
+
+/**
+ * Server-side Ollama execution proxy targeting local qwen2.5:7b
+ */
+export async function executeOllamaChatServer(params: {
+  cleanUserText: string;
+  systemInstruction: string;
+  history?: any[];
+  model?: string;
+  baseUrl?: string;
+}): Promise<{ reply: string; actionType: string | null; actionPayloadJson: string | null; usage?: any }> {
+  const baseUrl = (params.baseUrl || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, '');
+  const model = params.model || PAIOS_OLLAMA_MODEL;
+
+  const messages: any[] = [{ role: 'system', content: params.systemInstruction }];
+
+  if (Array.isArray(params.history) && params.history.length > 0) {
+    const recent = params.history.slice(-14);
+    for (const msg of recent) {
+      if (msg && msg.text && typeof msg.text === 'string' && msg.text.trim()) {
+        const isUserMsg = msg.isUser || msg.sender === 'USER' || msg.role === 'user';
+        messages.push({
+          role: isUserMsg ? 'user' : 'assistant',
+          content: msg.text.trim(),
+        });
+      }
+    }
+  }
+
+  if (messages.length <= 1 || messages[messages.length - 1].content !== params.cleanUserText) {
+    messages.push({
+      role: 'user',
+      content: params.cleanUserText,
+    });
+  }
+
+  const tools = [
+    {
+      type: 'function',
+      function: {
+        name: 'record_medication_dose',
+        description: 'Records or updates medication dose adherence status in user health ledger.',
+        parameters: {
+          type: 'object',
+          properties: {
+            medication_ids: { type: 'array', items: { type: 'string' } },
+            action: { type: 'string', enum: ['TAKEN', 'SKIPPED', 'TAKEN_LATE'] },
+            timestamp: { type: 'number' },
+            notes: { type: 'string' },
+          },
+          required: ['action'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'log_transaction',
+        description: 'Records a financial inflow or outflow in the money manager ledger.',
+        parameters: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            amount: { type: 'number' },
+            type: { type: 'string', enum: ['INFLOW', 'OUTFLOW'] },
+            category: { type: 'string' },
+            notes: { type: 'string' },
+          },
+          required: ['title', 'amount'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'create_task',
+        description: 'Creates a new actionable task in the user PAIOS task list.',
+        parameters: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            priority: { type: 'string', enum: ['HIGH', 'NORMAL', 'LOW'] },
+            dueDate: { type: 'string' },
+          },
+          required: ['title'],
+        },
+      },
+    },
+  ];
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+  const res = await fetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages,
+      tools,
+      stream: false,
+    }),
+    signal: controller.signal,
+  });
+  clearTimeout(timeoutId);
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Ollama HTTP ${res.status}: ${text || res.statusText}`);
+  }
+
+  const data: any = await res.json();
+  const rawContent = data.message?.content || '';
+  const toolCalls = data.message?.tool_calls || [];
+
+  let actionType: string | null = null;
+  let actionPayloadJson: string | null = null;
+
+  const actionRegex = /\[\[ACTION:\s*(\{.*?\})\s*\]\]/s;
+  const match = actionRegex.exec(rawContent);
+
+  if (match) {
+    actionPayloadJson = match[1];
+    if (actionPayloadJson.includes('ADD_TASK')) actionType = 'ADD_TASK';
+    else if (actionPayloadJson.includes('START_ACTIVITY')) actionType = 'START_ACTIVITY';
+    else if (actionPayloadJson.includes('SAVE_NOTE')) actionType = 'SAVE_NOTE';
+    else if (actionPayloadJson.includes('LOG_DOSE') || actionPayloadJson.includes('record_medication_dose')) actionType = 'LOG_DOSE';
+    else if (actionPayloadJson.includes('LOG_TRANSACTION') || actionPayloadJson.includes('log_transaction')) actionType = 'LOG_TRANSACTION';
+    else if (actionPayloadJson.includes('create_task')) actionType = 'create_task';
+    else if (actionPayloadJson.includes('LOG_SYMPTOM')) actionType = 'LOG_SYMPTOM';
+    else if (actionPayloadJson.includes('BOOK_APPOINTMENT')) actionType = 'BOOK_APPOINTMENT';
+  }
+
+  if (!actionType && toolCalls.length > 0) {
+    const call = toolCalls[0]?.function;
+    if (call) {
+      const fnName = call.name;
+      const fnArgs = typeof call.arguments === 'string' ? JSON.parse(call.arguments || '{}') : (call.arguments || {});
+
+      if (fnName === 'record_medication_dose' || fnName === 'log_dose') {
+        actionType = 'LOG_DOSE';
+        actionPayloadJson = JSON.stringify({
+          type: 'record_medication_dose',
+          medication_ids: fnArgs.medication_ids || ['all_due'],
+          action: fnArgs.action || 'TAKEN',
+          notes: fnArgs.notes || 'Logged via Ollama Tool Call',
+          timestamp: fnArgs.timestamp || Date.now(),
+        });
+      } else if (fnName === 'log_transaction') {
+        actionType = 'LOG_TRANSACTION';
+        actionPayloadJson = JSON.stringify({ type: 'log_transaction', ...fnArgs });
+      } else if (fnName === 'create_task') {
+        actionType = 'create_task';
+        actionPayloadJson = JSON.stringify({ type: 'create_task', ...fnArgs });
+      }
+    }
+  }
+
+  const cleanReply = rawContent.replace(actionRegex, '').trim() || (actionType ? `Action ${actionType} recorded successfully.` : '');
+
+  return {
+    reply: cleanReply,
+    actionType,
+    actionPayloadJson,
+    usage: {
+      promptTokens: data.prompt_eval_count,
+      completionTokens: data.eval_count,
+      totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
+    },
+  };
+}
+
 app.use(express.json());
 
 // Authentication Middleware
@@ -57,6 +233,158 @@ export function requireAuth(req: express.Request, res: express.Response, next: e
 // API Endpoint: Health
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', app: 'PAIOS' });
+});
+
+// Diagnostic & Status Endpoint for AI Assistant Providers (Ollama Local vs. Google Gemini)
+app.get('/assistant/status', async (req, res) => {
+  const requestedProvider = ((req.query.provider as string) || PAIOS_AI_PROVIDER).toLowerCase();
+  const baseUrl = ((req.query.baseUrl as string) || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, '');
+  const targetModel = (req.query.model as string) || PAIOS_OLLAMA_MODEL;
+
+  let ollamaAvailable = false;
+  let ollamaModels: string[] = [];
+  let hasModel = false;
+  let ollamaError: string | undefined;
+
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 3000);
+    const resp = await fetch(`${baseUrl}/api/tags`, { signal: controller.signal });
+    clearTimeout(t);
+    if (resp.ok) {
+      const data: any = await resp.json();
+      ollamaModels = (data?.models || []).map((m: any) => (typeof m === 'string' ? m : m?.name || '')).filter(Boolean);
+      ollamaAvailable = true;
+      const targetClean = targetModel.toLowerCase().trim();
+      hasModel = ollamaModels.some((n: string) => {
+        const lower = n.toLowerCase().trim();
+        return (
+          lower === targetClean ||
+          lower === `${targetClean}:latest` ||
+          lower.startsWith(`${targetClean}:`) ||
+          targetClean.startsWith(`${lower}:`)
+        );
+      });
+    } else {
+      ollamaError = `HTTP ${resp.status}: ${resp.statusText}`;
+    }
+  } catch (err: any) {
+    ollamaError = err?.message || 'Connection Refused';
+  }
+
+  const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.startsWith('test-'));
+  const activeProvider = requestedProvider === 'ollama' ? 'ollama' : 'gemini';
+  const isAvailable = activeProvider === 'ollama' ? (ollamaAvailable && hasModel) : hasGeminiKey;
+
+  res.json({
+    provider: activeProvider,
+    model: activeProvider === 'ollama' ? targetModel : (process.env.GEMINI_MODEL || 'gemini-3.7-flash'),
+    available: isAvailable,
+    localEndpoint: baseUrl,
+    ollamaStatus: {
+      available: ollamaAvailable,
+      baseUrl,
+      models: ollamaModels,
+      hasModel,
+      model: targetModel,
+      error: ollamaError,
+    },
+    geminiStatus: {
+      available: hasGeminiKey,
+      hasApiKey: hasGeminiKey,
+    },
+  });
+});
+
+// Diagnostic Inference Test Endpoint for AI Assistant Providers
+app.post('/assistant/test', async (req, res) => {
+  const provider = ((req.body?.provider as string) || PAIOS_AI_PROVIDER).toLowerCase();
+  const baseUrl = ((req.body?.baseUrl as string) || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, '');
+  const targetModel = (req.body?.model as string) || PAIOS_OLLAMA_MODEL;
+  const testPrompt = req.body?.prompt || 'Hello! Respond with a 1-sentence confirmation that PAIOS is connected.';
+
+  const startTime = Date.now();
+
+  if (provider === 'ollama') {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 20000);
+      const resp = await fetch(`${baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: targetModel,
+          messages: [{ role: 'user', content: testPrompt }],
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(t);
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        return res.status(resp.status).json({
+          success: false,
+          provider: 'ollama',
+          model: targetModel,
+          error: `Ollama error HTTP ${resp.status}: ${errText}`,
+          latencyMs: Date.now() - startTime,
+        });
+      }
+
+      const data: any = await resp.json();
+      const reply = data.message?.content || 'Model responded with empty message.';
+      return res.json({
+        success: true,
+        provider: 'ollama',
+        model: targetModel,
+        reply,
+        latencyMs: Date.now() - startTime,
+      });
+    } catch (err: any) {
+      return res.status(503).json({
+        success: false,
+        provider: 'ollama',
+        model: targetModel,
+        error: `Ollama connection failed: ${err.message || 'Unreachable'}`,
+        latencyMs: Date.now() - startTime,
+      });
+    }
+  } else {
+    // Gemini test inference
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey.startsWith('test-')) {
+      return res.json({
+        success: true,
+        provider: 'gemini',
+        model: 'gemini-3.7-flash',
+        reply: 'Gemini test response (running with test / mock credentials).',
+        latencyMs: Date.now() - startTime,
+      });
+    }
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const resp = await ai.models.generateContent({
+        model: 'gemini-3.7-flash',
+        contents: [{ role: 'user', parts: [{ text: testPrompt }] }],
+      });
+      return res.json({
+        success: true,
+        provider: 'gemini',
+        model: 'gemini-3.7-flash',
+        reply: resp.text || '',
+        latencyMs: Date.now() - startTime,
+      });
+    } catch (err: any) {
+      return res.status(503).json({
+        success: false,
+        provider: 'gemini',
+        model: 'gemini-3.7-flash',
+        error: `Gemini call failed: ${err.message || err}`,
+        latencyMs: Date.now() - startTime,
+      });
+    }
+  }
 });
 
 // --- IN-APP SOFTWARE UPDATE & VERSION ENDPOINTS ---
@@ -423,10 +751,10 @@ app.post('/api/sync/auth', (req, res) => {
   res.status(400).json({ error: 'Invalid action' });
 });
 
-// API Endpoint: Gemini AI Chat (Secure Proxy with Key Isolation)
+// API Endpoint: AI Chat (Dual-Engine: Google Gemini Cloud & Ollama Local qwen2.5:7b)
 app.post('/api/ai/chat', requireAuth, async (req, res) => {
   try {
-    const { message, userText, userContext, modelName, role, taskComplexity, history } = req.body || {};
+    const { message, userText, userContext, modelName, role, taskComplexity, history, aiProvider, ollamaModel, ollamaBaseUrl } = req.body || {};
     const promptText = (message !== undefined ? message : userText);
 
     if (!promptText || typeof promptText !== 'string' || !promptText.trim()) {
@@ -465,80 +793,6 @@ app.post('/api/ai/chat', requireAuth, async (req, res) => {
         actionType: null,
         actionPayloadJson: null,
       });
-    }
-
-    // Always use server-side process.env.GEMINI_API_KEY (strictly ignore client-supplied keys)
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    // Test environment or dummy key fallback
-    if (process.env.NODE_ENV === 'test' || !apiKey || apiKey.startsWith('test-')) {
-      let actionType: string | null = null;
-      let actionPayloadJson: string | null = null;
-      let mockReply = `Server-side AI response for: ${cleanUserText}`;
-
-      // If user confirms taking medication doses
-      if (/\b(take|took|mark.*dose|record.*dose|log.*dose|taken)\b/i.test(cleanUserText)) {
-        actionType = 'LOG_DOSE';
-        actionPayloadJson = JSON.stringify({
-          type: 'record_medication_dose',
-          action: 'TAKEN',
-          medication_ids: ['all_due'],
-          notes: 'Dose marked taken via AI Assistant conversation',
-          timestamp: Date.now(),
-        });
-        mockReply = `I have marked your scheduled medication dose as taken in your Health Ledger.`;
-      } else if (/\b(spent|spend|paid|received|earned|deposit|expense|income|transaction)\b/i.test(cleanUserText)) {
-        actionType = 'LOG_TRANSACTION';
-        const numMatch = cleanUserText.match(/\d+(\.\d+)?/);
-        const amount = numMatch ? parseFloat(numMatch[0]) : 50;
-        const isInflow = /\b(received|earned|deposit|income|salary)\b/i.test(cleanUserText);
-        actionPayloadJson = JSON.stringify({
-          type: 'log_transaction',
-          flowType: isInflow ? 'INFLOW' : 'OUTFLOW',
-          amount,
-          title: cleanUserText.slice(0, 40),
-          category: isInflow ? 'Salary' : 'Food',
-        });
-        mockReply = `I have logged this ${isInflow ? 'income' : 'expense'} transaction of ${amount} in your Ledger.`;
-      } else if (/\b(create.*task|add.*task|remind.*to)\b/i.test(cleanUserText)) {
-        actionType = 'create_task';
-        actionPayloadJson = JSON.stringify({
-          type: 'create_task',
-          title: cleanUserText.replace(/^(create|add|remind me to)\s+/i, ''),
-          priority: 'NORMAL',
-        });
-        mockReply = `I have added this task to your task list.`;
-      }
-
-      return res.status(200).json({
-        reply: mockReply,
-        text: mockReply,
-        actionType,
-        actionPayloadJson,
-        usage: { totalTokens: 32 },
-      });
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-
-    // Model candidate routing based on task complexity or explicit model selection
-    let modelCandidates: string[] = [];
-    const lowerModel = (modelName || '').toLowerCase();
-    const mode = taskComplexity || (lowerModel.includes('pro') ? 'complex' : lowerModel.includes('lite') ? 'fast' : 'general');
-
-    if (mode === 'complex') {
-      modelCandidates = ['gemini-3.1-pro-preview', 'gemini-3.7-flash', 'gemini-3.5-flash'];
-    } else if (mode === 'fast') {
-      modelCandidates = ['gemini-3.1-flash-lite', 'gemini-3.7-flash', 'gemini-3.5-flash'];
-    } else {
-      modelCandidates = ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
     }
 
     // Role Persona System Instructions
@@ -583,6 +837,141 @@ or
 Active PAIOS Context & Metadata:
 ${userContext || 'No context available.'}
 `.trim();
+
+    const effectiveProvider = ((aiProvider as string) || PAIOS_AI_PROVIDER).toLowerCase();
+    const effectiveOllamaModel = (ollamaModel as string) || PAIOS_OLLAMA_MODEL;
+    const effectiveOllamaBaseUrl = ((ollamaBaseUrl as string) || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, '');
+
+    // Direct Ollama Route when explicitly configured
+    if (effectiveProvider === 'ollama') {
+      try {
+        const ollamaRes = await executeOllamaChatServer({
+          cleanUserText,
+          systemInstruction,
+          history,
+          model: effectiveOllamaModel,
+          baseUrl: effectiveOllamaBaseUrl,
+        });
+
+        return res.status(200).json({
+          reply: ollamaRes.reply,
+          text: ollamaRes.reply,
+          actionType: ollamaRes.actionType,
+          actionPayloadJson: ollamaRes.actionPayloadJson,
+          usage: ollamaRes.usage,
+          provider: 'ollama',
+          model: effectiveOllamaModel,
+        });
+      } catch (ollamaErr: any) {
+        console.warn('Ollama chat execution failed, checking fallback:', ollamaErr?.message || ollamaErr);
+        if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.startsWith('test-')) {
+          return res.status(503).json({
+            error: `Local Ollama (${effectiveOllamaModel} at ${effectiveOllamaBaseUrl}) unavailable: ${ollamaErr?.message || 'Connection refused'}. Ensure Ollama daemon is running (\`ollama serve\`) and '${effectiveOllamaModel}' is pulled.`,
+          });
+        }
+        // Fall back to Gemini if available
+      }
+    }
+
+    // Always use server-side process.env.GEMINI_API_KEY (strictly ignore client-supplied keys)
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    // Test environment or dummy key fallback
+    if (process.env.NODE_ENV === 'test' || !apiKey || apiKey.startsWith('test-')) {
+      // If not in test mode, try Ollama before returning dummy response
+      if (process.env.NODE_ENV !== 'test' && !apiKey) {
+        try {
+          const fallbackRes = await executeOllamaChatServer({
+            cleanUserText,
+            systemInstruction,
+            history,
+            model: effectiveOllamaModel,
+            baseUrl: effectiveOllamaBaseUrl,
+          });
+          return res.status(200).json({
+            reply: fallbackRes.reply,
+            text: fallbackRes.reply,
+            actionType: fallbackRes.actionType,
+            actionPayloadJson: fallbackRes.actionPayloadJson,
+            usage: fallbackRes.usage,
+            provider: 'ollama',
+            model: effectiveOllamaModel,
+            fallback: true,
+          });
+        } catch (ollamaFallbackErr) {
+          // Continue to test mock
+        }
+      }
+
+      let actionType: string | null = null;
+      let actionPayloadJson: string | null = null;
+      let mockReply = `Server-side AI response for: ${cleanUserText}`;
+
+      // If user confirms taking medication doses
+      if (/\b(take|took|mark.*dose|record.*dose|log.*dose|taken)\b/i.test(cleanUserText)) {
+        actionType = 'LOG_DOSE';
+        actionPayloadJson = JSON.stringify({
+          type: 'record_medication_dose',
+          action: 'TAKEN',
+          medication_ids: ['all_due'],
+          notes: 'Dose marked taken via AI Assistant conversation',
+          timestamp: Date.now(),
+        });
+        mockReply = `I have marked your scheduled medication dose as taken in your Health Ledger.`;
+      } else if (/\b(spent|spend|paid|received|earned|deposit|expense|income|transaction)\b/i.test(cleanUserText)) {
+        actionType = 'LOG_TRANSACTION';
+        const numMatch = cleanUserText.match(/\d+(\.\d+)?/);
+        const amount = numMatch ? parseFloat(numMatch[0]) : 50;
+        const isInflow = /\b(received|earned|deposit|income|salary)\b/i.test(cleanUserText);
+        actionPayloadJson = JSON.stringify({
+          type: 'log_transaction',
+          flowType: isInflow ? 'INFLOW' : 'OUTFLOW',
+          amount,
+          title: cleanUserText.slice(0, 40),
+          category: isInflow ? 'Salary' : 'Food',
+        });
+        mockReply = `I have logged this ${isInflow ? 'income' : 'expense'} transaction of ${amount} in your Ledger.`;
+      } else if (/\b(create.*task|add.*task|remind.*to)\b/i.test(cleanUserText)) {
+        actionType = 'create_task';
+        actionPayloadJson = JSON.stringify({
+          type: 'create_task',
+          title: cleanUserText.replace(/^(create|add|remind me to)\s+/i, ''),
+          priority: 'NORMAL',
+        });
+        mockReply = `I have added this task to your task list.`;
+      }
+
+      return res.status(200).json({
+        reply: mockReply,
+        text: mockReply,
+        actionType,
+        actionPayloadJson,
+        usage: { totalTokens: 32 },
+        provider: 'gemini',
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    // Model candidate routing based on task complexity or explicit model selection
+    let modelCandidates: string[] = [];
+    const lowerModel = (modelName || '').toLowerCase();
+    const mode = taskComplexity || (lowerModel.includes('pro') ? 'complex' : lowerModel.includes('lite') ? 'fast' : 'general');
+
+    if (mode === 'complex') {
+      modelCandidates = ['gemini-3.1-pro-preview', 'gemini-3.7-flash', 'gemini-3.5-flash'];
+    } else if (mode === 'fast') {
+      modelCandidates = ['gemini-3.1-flash-lite', 'gemini-3.7-flash', 'gemini-3.5-flash'];
+    } else {
+      modelCandidates = ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+    }
 
     // Build multi-turn contents array from history
     const contents: any[] = [];
@@ -707,9 +1096,31 @@ ${userContext || 'No context available.'}
     }
 
     if (!fullText && geminiFunctionCalls.length === 0) {
-      return res.status(502).json({
-        error: `AI gateway communication failed: ${lastError?.message || '502 Bad Gateway'}`,
-      });
+      // Fallback chain: Gemini failed, try local Ollama qwen2.5:7b
+      try {
+        console.warn('Gemini models failed. Attempting clean fallback to local Ollama qwen2.5:7b...');
+        const fallbackRes = await executeOllamaChatServer({
+          cleanUserText,
+          systemInstruction,
+          history,
+          model: effectiveOllamaModel,
+          baseUrl: effectiveOllamaBaseUrl,
+        });
+        return res.status(200).json({
+          reply: fallbackRes.reply,
+          text: fallbackRes.reply,
+          actionType: fallbackRes.actionType,
+          actionPayloadJson: fallbackRes.actionPayloadJson,
+          usage: fallbackRes.usage,
+          provider: 'ollama',
+          model: effectiveOllamaModel,
+          fallback: true,
+        });
+      } catch (ollamaErr: any) {
+        return res.status(502).json({
+          error: `AI gateway communication failed (Gemini error: ${lastError?.message || 'Failed'}; Ollama fallback: ${ollamaErr?.message || 'Unavailable'})`,
+        });
+      }
     }
 
     // Parse action block or tool calls
@@ -767,6 +1178,7 @@ ${userContext || 'No context available.'}
       actionType,
       actionPayloadJson,
       usage: usageMetadata,
+      provider: 'gemini',
     });
   } catch (err: any) {
     console.error('Gemini API Error:', err);
@@ -776,17 +1188,59 @@ ${userContext || 'No context available.'}
   }
 });
 
-// API Endpoint: Gemini Content Operations & Analysis
+// API Endpoint: Content Operations & Analysis (Dual-Engine: Gemini & Ollama)
 app.post('/api/ai/analyze-content', async (req, res) => {
   try {
-    const { prompt, content, taskComplexity = 'general', customApiKey } = req.body;
+    const { prompt, content, taskComplexity = 'general', customApiKey, aiProvider, ollamaModel, ollamaBaseUrl } = req.body || {};
 
     if (!content || typeof content !== 'string') {
       res.status(400).json({ error: 'content is required' });
       return;
     }
 
+    const provider = ((aiProvider as string) || PAIOS_AI_PROVIDER).toLowerCase();
+    const targetOllamaModel = (ollamaModel as string) || PAIOS_OLLAMA_MODEL;
+    const targetOllamaBaseUrl = ((ollamaBaseUrl as string) || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, '');
     const apiKey = customApiKey || process.env.GEMINI_API_KEY;
+
+    // Direct Ollama Route or fallback when no Gemini key is configured
+    if (provider === 'ollama' || !apiKey) {
+      try {
+        const instruction = prompt || 'Analyze, summarize, or edit the following user text for clarity, key insights, and actionable steps:';
+        const resp = await fetch(`${targetOllamaBaseUrl}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: targetOllamaModel,
+            messages: [
+              { role: 'system', content: instruction },
+              { role: 'user', content },
+            ],
+            stream: false,
+          }),
+        });
+
+        if (resp.ok) {
+          const data: any = await resp.json();
+          return res.json({
+            success: true,
+            modelUsed: `ollama:${targetOllamaModel}`,
+            provider: 'ollama',
+            taskComplexity,
+            resultText: data.message?.content || '',
+          });
+        }
+      } catch (ollamaErr: any) {
+        if (!apiKey) {
+          return res.json({
+            success: false,
+            error: `Ollama analysis failed: ${ollamaErr.message}`,
+            resultText: 'Local Ollama analysis failed and no Gemini API key is configured.',
+          });
+        }
+      }
+    }
+
     if (!apiKey) {
       res.json({
         success: false,
