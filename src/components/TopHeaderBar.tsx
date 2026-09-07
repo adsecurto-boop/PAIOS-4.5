@@ -91,6 +91,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
               onClick={onOpenTour}
               className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px]"
               title="Launch Setup Tour Guide & AI Assistant"
+              aria-label="Setup Guide"
             >
               <Compass className="w-4 h-4 text-cyan-400" />
               <span className="hidden lg:inline">Setup Guide</span>
@@ -126,6 +127,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
             onClick={onOpenCheckIn}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px]"
             title="Morning Check-In"
+            aria-label="Morning Check-In"
           >
             <Sun className="w-4 h-4 text-amber-400" />
             <span className="hidden sm:inline">Check-In</span>
@@ -135,6 +137,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
             onClick={onOpenReview}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px]"
             title="Evening Review"
+            aria-label="Evening Review"
           >
             <Moon className="w-4 h-4 text-indigo-400" />
             <span className="hidden sm:inline">Review</span>

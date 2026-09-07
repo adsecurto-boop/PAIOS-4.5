@@ -35,11 +35,13 @@ export const SearchModal: React.FC<SearchModalProps> = ({ searchResults, onSearc
             value={query}
             onChange={handleChange}
             placeholder="Search across Tasks, Timeline, Notes, Journal & Flashcards..."
+            aria-label="Search across tasks, timeline, notes, journal and flashcards"
             className="w-full bg-transparent text-sm text-white focus:outline-none placeholder:text-slate-500 font-medium"
           />
           <button
             onClick={onDismiss}
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close search"
           >
             <X className="w-5 h-5" />
           </button>
