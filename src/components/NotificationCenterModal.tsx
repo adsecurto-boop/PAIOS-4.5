@@ -97,6 +97,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close notification center"
           >
             <X className="w-5 h-5" />
           </button>

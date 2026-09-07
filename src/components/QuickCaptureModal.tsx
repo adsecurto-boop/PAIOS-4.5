@@ -30,6 +30,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ onDismiss,
           <button
             onClick={onDismiss}
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close quick capture note"
           >
             <X className="w-5 h-5" />
           </button>
@@ -61,6 +62,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ onDismiss,
                   key={cat}
                   type="button"
                   onClick={() => setCategory(cat)}
+                  aria-pressed={category === cat}
                   className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                     category === cat
                       ? 'bg-cyan-600 text-white font-semibold'
