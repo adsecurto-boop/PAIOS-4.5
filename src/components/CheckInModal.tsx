@@ -54,6 +54,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
           </div>
           <button
             onClick={onDismiss}
+            aria-label="Close Morning Check-In modal"
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -77,6 +78,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
                 step="0.5"
                 value={sleepHours}
                 onChange={(e) => setSleepHours(parseFloat(e.target.value))}
+                aria-label="Sleep duration in hours"
                 className="w-full accent-indigo-500 cursor-pointer"
               />
             </div>
@@ -92,6 +94,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
                 max="10"
                 value={sleepQuality}
                 onChange={(e) => setSleepQuality(parseInt(e.target.value))}
+                aria-label="Sleep quality score out of 10"
                 className="w-full accent-amber-500 cursor-pointer"
               />
             </div>
@@ -112,6 +115,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
                 max="10"
                 value={energy}
                 onChange={(e) => setEnergy(parseInt(e.target.value))}
+                aria-label="Energy level score out of 10"
                 className="w-full accent-emerald-500 cursor-pointer"
               />
             </div>
@@ -129,6 +133,7 @@ export const CheckInModal: React.FC<CheckInModalProps> = ({
                 max="10"
                 value={mood}
                 onChange={(e) => setMood(parseInt(e.target.value))}
+                aria-label="Mood score out of 10"
                 className="w-full accent-cyan-500 cursor-pointer"
               />
             </div>

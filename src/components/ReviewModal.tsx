@@ -56,6 +56,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
           </div>
           <button
             onClick={onDismiss}
+            aria-label="Close Evening Review modal"
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -87,6 +88,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
                 max="10"
                 value={rating}
                 onChange={(e) => setRating(parseInt(e.target.value))}
+                aria-label="Overall day rating from 1 to 10"
                 className="w-full accent-indigo-500 cursor-pointer"
               />
               <span className="text-base font-mono font-extrabold text-amber-400 min-w-[32px] text-right">

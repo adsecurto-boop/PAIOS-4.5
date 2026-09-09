@@ -173,6 +173,7 @@ pause`;
           </div>
           <button
             onClick={onDismiss}
+            aria-label="Close desktop export modal"
             className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors"
           >
             <X className="w-5 h-5" />

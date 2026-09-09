@@ -219,6 +219,7 @@ export const DailySweepPourModal: React.FC<DailySweepPourModalProps> = ({
           <button
             onClick={onClose}
             disabled={isPouring}
+            aria-label="Close modal"
             className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
           >
             <X className="w-5 h-5" />
@@ -363,6 +364,7 @@ export const DailySweepPourModal: React.FC<DailySweepPourModalProps> = ({
                       step="1"
                       value={allocatedAmt}
                       onChange={(e) => handlePotSliderChange(pot.id, parseFloat(e.target.value))}
+                      aria-label={`Pour allocation slider for ${pot.title}`}
                       className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                     />
                     <span className="text-[10px] font-mono text-slate-400 shrink-0 w-12 text-right">
