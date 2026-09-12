@@ -31,7 +31,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
           </div>
           <button
             onClick={onDismiss}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close task modal"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -39,17 +40,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+            <label htmlFor="task-title" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
               Task Title *
             </label>
             <input
+              id="task-title"
               type="text"
               required
               autoFocus
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Run regression test suite, Study chapter 4..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500"
             />
           </div>
 
@@ -63,7 +65,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
                   key={cat}
                   type="button"
                   onClick={() => setCategory(cat)}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  aria-pressed={category === cat}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors ${
                     category === cat
                       ? 'bg-indigo-600 text-white font-semibold'
                       : 'bg-slate-800 text-slate-400 hover:text-slate-200'
@@ -79,7 +82,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
             <button
               type="button"
               onClick={() => setIsPriority(!isPriority)}
-              className={`p-2 rounded-lg transition-colors ${
+              aria-label="Toggle priority status"
+              aria-pressed={isPriority}
+              className={`p-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors ${
                 isPriority ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800 text-slate-400'
               }`}
             >
@@ -92,15 +97,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+            <label htmlFor="task-description" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
               Description / Notes (Optional)
             </label>
             <textarea
+              id="task-description"
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Additional details, sub-steps, or links..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500"
             />
           </div>
 
@@ -108,14 +114,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
             <button
               type="button"
               onClick={onDismiss}
-              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!title.trim()}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition-all disabled:opacity-50"
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-all disabled:opacity-50"
             >
               Create Task
             </button>
