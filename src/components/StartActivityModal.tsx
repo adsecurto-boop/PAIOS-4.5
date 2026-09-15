@@ -31,6 +31,7 @@ export const StartActivityModal: React.FC<StartActivityModalProps> = ({ onDismis
           <button
             onClick={onDismiss}
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close start activity modal"
           >
             <X className="w-5 h-5" />
           </button>
