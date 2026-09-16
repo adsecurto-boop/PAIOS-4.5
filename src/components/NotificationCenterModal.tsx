@@ -136,6 +136,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                 onClick={markAllNotificationsAsRead}
                 className="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center gap-1 transition-colors"
                 title="Mark all as read"
+                aria-label="Mark all notifications as read"
               >
                 <CheckCheck className="w-3.5 h-3.5" />
                 <span>Mark Read</span>
@@ -146,6 +147,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                 onClick={clearAllNotifications}
                 className="px-2 py-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 flex items-center gap-1 transition-colors"
                 title="Clear history"
+                aria-label="Clear notification history"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
