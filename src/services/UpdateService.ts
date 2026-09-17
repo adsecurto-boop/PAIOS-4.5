@@ -429,27 +429,24 @@ export class UpdateService {
     // 1. Electron Platform Flow
     if (platform === 'electron') {
       try {
-        const electron = (window as any).require ? (window as any).require('electron') : null;
-        if (electron?.ipcRenderer) {
+        const electronAPI = (window as any).electronAPI;
+        const sha256 = manifest.platforms?.windows?.sha256;
+        if (!/^[a-f0-9]{64}$/i.test(String(sha256 || ''))) {
+          throw new Error('This update has no valid SHA-256 checksum and was blocked.');
+        }
+        if (electronAPI?.downloadUpdate) {
           return new Promise((resolve, reject) => {
-            electron.ipcRenderer.on('paios:update-download-progress', (_e: any, progress: DownloadProgress) => {
-              onProgress(progress);
-            });
-
             // Candidate URLs for Electron download
             const candidateUrls = [
               manifest.platforms?.windows?.url,
-              'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip',
-              'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip',
-              'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/PAIOS-Desktop-Windows-x64.zip',
-              '/api/version/download/windows',
             ].filter(Boolean);
 
-            electron.ipcRenderer
-              .invoke('paios:download-update', {
+            electronAPI
+              .downloadUpdate({
                 url: candidateUrls[0],
                 fallbackUrls: candidateUrls.slice(1),
                 version: manifest.version,
+                sha256,
               })
               .then((resultPath: string) => {
                 onProgress({
@@ -620,19 +617,21 @@ export class UpdateService {
     // 1. Electron Platform Install / Reveal
     if (platform === 'electron') {
       try {
-        const electron = (window as any).require ? (window as any).require('electron') : null;
-        if (electron?.ipcRenderer) {
+        const electronAPI = (window as any).electronAPI;
+        const sha256 = manifest.platforms?.windows?.sha256;
+        if (electronAPI?.applyUpdate && /^[a-f0-9]{64}$/i.test(String(sha256 || ''))) {
           let bufferArray: number[] | undefined = undefined;
           if (downloadedData instanceof Blob) {
             const ab = await downloadedData.arrayBuffer();
             bufferArray = Array.from(new Uint8Array(ab));
           }
 
-          await electron.ipcRenderer.invoke('paios:apply-update', {
+          await electronAPI.applyUpdate({
             version: manifest.version,
             gitCommit: manifest.gitCommit,
             filePath: typeof downloadedData === 'string' ? downloadedData : undefined,
             fileBuffer: bufferArray,
+            sha256,
           });
           return;
         }

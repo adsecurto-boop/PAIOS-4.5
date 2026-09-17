@@ -600,7 +600,7 @@ function load<T>(key: string, fallback: T): T {
   return fallback;
 }
 
-function getAuthToken(): string | null {
+export function getAuthToken(): string | null {
   if (typeof localStorage !== 'undefined') {
     return localStorage.getItem('paios_auth_token');
   }

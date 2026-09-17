@@ -18,7 +18,7 @@ const electronAPI = {
   },
   getVersion: () => ipcRenderer.invoke('paios:get-version'),
   getConfig: () => ipcRenderer.invoke('paios:get-config'),
-  setConfig: (config) => ipcRenderer.invoke('paios:set-config', config),
+  setConfig: (config) => ipcRenderer.invoke('paios:set-config', { autoUpdateCheck: config?.autoUpdateCheck !== false }),
   reload: () => ipcRenderer.invoke('paios:reload'),
   downloadUpdate: (params) => ipcRenderer.invoke('paios:download-update', params),
   applyUpdate: (params) => ipcRenderer.invoke('paios:apply-update', params),

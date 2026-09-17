@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Brain, Tag, Sparkles, Zap } from 'lucide-react';
+import { getAuthToken } from '../storage';
 
 interface StudyCardModalProps {
   onDismiss: () => void;
@@ -25,7 +26,7 @@ export const StudyCardModal: React.FC<StudyCardModalProps> = ({ onDismiss, onSav
     try {
       const res = await fetch('/api/ai/analyze-content', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) },
         body: JSON.stringify({
           prompt: `Create a high-yield study flashcard question and answer pair for topic "${topic}".
 Output MUST follow this EXACT JSON format (no extra text):

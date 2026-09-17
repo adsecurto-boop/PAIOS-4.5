@@ -30,6 +30,7 @@ import { AutoUpdateSyncBanner } from '../components/AutoUpdateSyncBanner';
 import { SoftwareUpdateCard } from '../components/SoftwareUpdateCard';
 import { exportAndShareBackup } from '../utils/exportShare';
 import { checkOllamaHealth, sendOllamaChat } from '../services/ollamaClient';
+import { getAuthToken } from '../storage';
 
 interface SettingsScreenProps {
   settings: UserSettings;
@@ -93,7 +94,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     try {
       // First try backend assistant status endpoint if reachable
       const res = await fetch(
-        `/assistant/status?provider=ollama&baseUrl=${encodeURIComponent(urlToTest)}&model=${encodeURIComponent(modelToTest)}`
+        `/assistant/status?provider=ollama&baseUrl=${encodeURIComponent(urlToTest)}&model=${encodeURIComponent(modelToTest)}`,
+        { headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {} }
       ).catch(() => null);
 
       if (res && res.ok) {
@@ -144,7 +146,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       // Try backend /assistant/test endpoint
       const res = await fetch('/assistant/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) },
         body: JSON.stringify({
           provider: 'ollama',
           baseUrl: ollamaUrlVal,

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import db from './src/server/db';
 
 const _filename = typeof __filename !== 'undefined' ? __filename : '';
@@ -12,12 +13,28 @@ const _dirname = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'paios5_ubuntu_sqlite_jwt_secret';
+// Production deployments must supply a stable secret. Development receives an
+// ephemeral secret so credentials cannot be forged with a repository default.
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be configured in production.');
+}
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'test'
+  ? 'paios-test-jwt-secret-not-for-production'
+  : crypto.randomBytes(32).toString('hex'));
 
 // AI Provider Configurations (Google Gemini Cloud vs. Ollama Local qwen2.5:7b)
 export const PAIOS_AI_PROVIDER = (process.env.PAIOS_AI_PROVIDER || 'gemini').toLowerCase();
 export const PAIOS_OLLAMA_MODEL = process.env.PAIOS_OLLAMA_MODEL || 'qwen2.5:7b';
 export const PAIOS_OLLAMA_BASE_URL = (process.env.PAIOS_OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/+$/, '');
+
+function resolveLocalOllamaUrl(candidate?: string): string {
+  if (!candidate) return PAIOS_OLLAMA_BASE_URL;
+  const parsed = new URL(candidate);
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname) || !['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('Only a local Ollama endpoint may be selected from the client.');
+  }
+  return parsed.toString().replace(/\/$/, '');
+}
 
 /**
  * Server-side Ollama execution proxy targeting local qwen2.5:7b
@@ -29,7 +46,7 @@ export async function executeOllamaChatServer(params: {
   model?: string;
   baseUrl?: string;
 }): Promise<{ reply: string; actionType: string | null; actionPayloadJson: string | null; usage?: any }> {
-  const baseUrl = (params.baseUrl || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, '');
+  const baseUrl = resolveLocalOllamaUrl(params.baseUrl);
   const model = params.model || PAIOS_OLLAMA_MODEL;
 
   const messages: any[] = [{ role: 'system', content: params.systemInstruction }];
@@ -236,9 +253,11 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Diagnostic & Status Endpoint for AI Assistant Providers (Ollama Local vs. Google Gemini)
-app.get('/assistant/status', async (req, res) => {
+app.get('/assistant/status', requireAuth, async (req, res) => {
   const requestedProvider = ((req.query.provider as string) || PAIOS_AI_PROVIDER).toLowerCase();
-  const baseUrl = ((req.query.baseUrl as string) || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, '');
+  let baseUrl: string;
+  try { baseUrl = resolveLocalOllamaUrl(req.query.baseUrl as string | undefined); }
+  catch (err: any) { return res.status(400).json({ error: err.message }); }
   const targetModel = (req.query.model as string) || PAIOS_OLLAMA_MODEL;
 
   let ollamaAvailable = false;
@@ -297,9 +316,11 @@ app.get('/assistant/status', async (req, res) => {
 });
 
 // Diagnostic Inference Test Endpoint for AI Assistant Providers
-app.post('/assistant/test', async (req, res) => {
+app.post('/assistant/test', requireAuth, async (req, res) => {
   const provider = ((req.body?.provider as string) || PAIOS_AI_PROVIDER).toLowerCase();
-  const baseUrl = ((req.body?.baseUrl as string) || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, '');
+  let baseUrl: string;
+  try { baseUrl = resolveLocalOllamaUrl(req.body?.baseUrl as string | undefined); }
+  catch (err: any) { return res.status(400).json({ error: err.message }); }
   const targetModel = (req.body?.model as string) || PAIOS_OLLAMA_MODEL;
   const testPrompt = req.body?.prompt || 'Hello! Respond with a 1-sentence confirmation that PAIOS is connected.';
 
@@ -419,14 +440,8 @@ app.get('/api/version', (_req, res) => {
 });
 
 // API Endpoint: Publish New Version
-app.post('/api/version/publish', (req, res) => {
-  const { gitCommit, version, releaseNotes, platforms } = req.body || {};
-  if (gitCommit) dynamicVersionManifest.gitCommit = gitCommit;
-  if (version) dynamicVersionManifest.version = version;
-  if (releaseNotes) dynamicVersionManifest.releaseNotes = releaseNotes;
-  if (platforms) dynamicVersionManifest.platforms = { ...dynamicVersionManifest.platforms, ...platforms };
-  dynamicVersionManifest.buildTimestamp = Date.now();
-  res.json({ success: true, manifest: dynamicVersionManifest });
+app.post('/api/version/publish', (_req, res) => {
+  res.status(403).json({ error: 'Version publishing is restricted to the release pipeline.' });
 });
 
 // API Endpoint: Download Platform Binary (Windows ZIP / Android APK)
@@ -650,6 +665,11 @@ app.post('/api/version/publish', (req, res) => {
 });
 
 // Cross-Device REST Sync API Store (Legacy backwards compatibility)
+// These unauthenticated in-memory endpoints are deliberately retired.  The
+// authenticated SQLite sync API above is the only supported REST sync path.
+app.use(['/api/sync/vault', '/api/sync/user', '/api/sync/auth'], (_req, res) => {
+  res.status(410).json({ error: 'Legacy sync endpoint retired. Use authenticated /api/sync endpoints.' });
+});
 interface SyncRecord {
   snapshot: Record<string, any>;
   updatedAt: number;
@@ -1189,9 +1209,9 @@ ${userContext || 'No context available.'}
 });
 
 // API Endpoint: Content Operations & Analysis (Dual-Engine: Gemini & Ollama)
-app.post('/api/ai/analyze-content', async (req, res) => {
+app.post('/api/ai/analyze-content', requireAuth, async (req, res) => {
   try {
-    const { prompt, content, taskComplexity = 'general', customApiKey, aiProvider, ollamaModel, ollamaBaseUrl } = req.body || {};
+    const { prompt, content, taskComplexity = 'general', aiProvider, ollamaModel, ollamaBaseUrl } = req.body || {};
 
     if (!content || typeof content !== 'string') {
       res.status(400).json({ error: 'content is required' });
@@ -1200,8 +1220,8 @@ app.post('/api/ai/analyze-content', async (req, res) => {
 
     const provider = ((aiProvider as string) || PAIOS_AI_PROVIDER).toLowerCase();
     const targetOllamaModel = (ollamaModel as string) || PAIOS_OLLAMA_MODEL;
-    const targetOllamaBaseUrl = ((ollamaBaseUrl as string) || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, '');
-    const apiKey = customApiKey || process.env.GEMINI_API_KEY;
+    const targetOllamaBaseUrl = resolveLocalOllamaUrl(ollamaBaseUrl as string | undefined);
+    const apiKey = process.env.GEMINI_API_KEY;
 
     // Direct Ollama Route or fallback when no Gemini key is configured
     if (provider === 'ollama' || !apiKey) {
@@ -1430,7 +1450,7 @@ function generateLocalFallbackTimetable(params: {
 }
 
 // API Endpoint: Gemini Adaptive Timeline Generation
-app.post('/api/ai/generate-timeline', async (req, res) => {
+app.post('/api/ai/generate-timeline', requireAuth, async (req, res) => {
   try {
     const {
       userContext,
@@ -1442,11 +1462,10 @@ app.post('/api/ai/generate-timeline', async (req, res) => {
       bedtime = '00:00',
       wakeTime = '07:30',
       adaptationReason,
-      customApiKey,
       modelName,
     } = req.body;
 
-    const apiKey = customApiKey || process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
       // Fallback local schedule generation when no API key is provided

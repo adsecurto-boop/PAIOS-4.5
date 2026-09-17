@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BookOpen, Plus, Trash2, Calendar, Smile, Tag, X, Sparkles, Brain, Zap } from 'lucide-react';
 import { JournalEntry } from '../types';
+import { getAuthToken } from '../storage';
 
 interface JournalScreenProps {
   entries: JournalEntry[];
@@ -37,7 +38,7 @@ export const JournalScreen: React.FC<JournalScreenProps> = ({
     try {
       const res = await fetch('/api/ai/analyze-content', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) },
         body: JSON.stringify({
           prompt: taskComplexity === 'complex'
             ? 'Analyze this journal entry with deep reasoning. Extract key psychological insights, underlying personal growth themes, and 3 high-impact action steps for tomorrow.'

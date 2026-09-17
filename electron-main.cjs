@@ -2,6 +2,7 @@ const { app, BrowserWindow, globalShortcut, Menu, ipcMain, dialog, session, Noti
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const crypto = require('crypto');
 
 // Configure Windows App User Model ID for native OS toast notifications & taskbar integration
 if (process.platform === 'win32') {
@@ -33,7 +34,10 @@ function loadConfig() {
 
 function saveConfig(config) {
   try {
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    // The desktop client intentionally loads only its bundled assets.  Do not
+    // persist an arbitrary remote page that would run inside Electron.
+    const safeConfig = { autoUpdateCheck: config?.autoUpdateCheck !== false, liveUrl: '' };
+    fs.writeFileSync(configPath, JSON.stringify(safeConfig, null, 2), 'utf8');
   } catch (err) {
     console.error('Failed to save paios-config.json:', err);
   }
@@ -69,7 +73,7 @@ function createWindow() {
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-            "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:3001 http://localhost:3000 ws://localhost:3001 ws://localhost:3000 https: http:; connect-src 'self' http://localhost:3001 http://localhost:3000 ws://localhost:3001 ws://localhost:3000 https: http:;"
+            "default-src 'self'; connect-src 'self' https: http://localhost:3001 http://localhost:3000 ws://localhost:3001 ws://localhost:3000; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
           ]
         }
       });
@@ -87,9 +91,10 @@ function createWindow() {
     autoHideMenuBar: false,
     icon: path.join(__dirname, 'dist', 'favicon.ico'),
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
       preload: path.join(__dirname, 'preload.cjs'),
     },
   });
@@ -98,7 +103,6 @@ function createWindow() {
   
   // Target URLs
   const devUrl = process.env.ELECTRON_START_URL || 'http://localhost:3001';
-  const remoteUrl = process.env.PAIOS_REMOTE_URL || config.liveUrl || DEFAULT_LIVE_URL;
 
 // Strict SemVer helper for Electron main process
 function isSemVerGreaterMain(remote, current) {
@@ -192,15 +196,14 @@ function isSemVerGreaterMain(remote, current) {
         loadLocalDist();
       });
     });
-  } else if (remoteUrl && remoteUrl.startsWith('http')) {
-    console.log(`Loading PAIOS from Live Sync URL: ${remoteUrl}`);
-    mainWindow.loadURL(remoteUrl).catch((err) => {
-      console.warn('Failed to load remote live URL, falling back to local files:', err);
-      loadLocalDist();
-    });
   } else {
     loadLocalDist();
   }
+
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    if (!targetUrl.startsWith('file:')) event.preventDefault();
+  });
 
   // Build application menu with Live Sync & Auto-Update tools
   const template = [
@@ -310,6 +313,7 @@ ipcMain.handle('paios:get-config', () => {
 });
 
 ipcMain.handle('paios:set-config', (event, newConfig) => {
+  if (event.sender !== mainWindow?.webContents) return false;
   saveConfig(newConfig);
   return true;
 });
@@ -323,7 +327,11 @@ ipcMain.handle('paios:reload', () => {
 });
 
 // IPC Handler: Download Windows Desktop Update Package
-ipcMain.handle('paios:download-update', async (event, { url, fallbackUrls = [], version }) => {
+ipcMain.handle('paios:download-update', async (event, { url, fallbackUrls = [], version, sha256 }) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error('Untrusted IPC sender');
+  if (!/^[a-f0-9]{64}$/i.test(String(sha256 || ''))) {
+    throw new Error('Update manifest must include a SHA-256 checksum');
+  }
   const updatesDir = path.join(app.getPath('userData'), 'updates');
   if (!fs.existsSync(updatesDir)) {
     fs.mkdirSync(updatesDir, { recursive: true });
@@ -346,7 +354,8 @@ ipcMain.handle('paios:download-update', async (event, { url, fallbackUrls = [], 
 
       function fetchWithRedirects(targetUrl) {
         try {
-          const client = targetUrl.startsWith('https') ? require('https') : require('http');
+          if (!String(targetUrl).startsWith('https://')) return tryDownloadNext();
+          const client = require('https');
           client.get(targetUrl, { headers: { 'User-Agent': 'PAIOS-Desktop-Updater' } }, (res) => {
             // Follow HTTP redirects
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -362,10 +371,12 @@ ipcMain.handle('paios:download-update', async (event, { url, fallbackUrls = [], 
             let transferredBytes = 0;
             const startTime = Date.now();
 
+            const digest = crypto.createHash('sha256');
             const fileStream = fs.createWriteStream(destPath);
             res.pipe(fileStream);
 
             res.on('data', (chunk) => {
+              digest.update(chunk);
               transferredBytes += chunk.length;
               const elapsedSec = (Date.now() - startTime) / 1000;
               const speed = elapsedSec > 0 ? Math.round(transferredBytes / elapsedSec) : 0;
@@ -384,6 +395,10 @@ ipcMain.handle('paios:download-update', async (event, { url, fallbackUrls = [], 
 
             fileStream.on('finish', () => {
               fileStream.close();
+              if (digest.digest('hex').toLowerCase() !== String(sha256).toLowerCase()) {
+                fs.unlink(destPath, () => {});
+                return tryDownloadNext();
+              }
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('paios:update-download-progress', {
                   percent: 100,
@@ -454,7 +469,8 @@ ipcMain.handle('paios:get-user-data-path', async () => {
 });
 
 // IPC Handler: Apply Windows Desktop Update
-ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuffer, gitCommit }) => {
+ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuffer, gitCommit, sha256 }) => {
+  if (event.sender !== mainWindow?.webContents) return { success: false, error: 'Untrusted IPC sender', updated: false };
   // SECURITY & DECOUPLING GUARD:
   // If running in development, or if the app is unpackaged, strictly refuse to apply updates.
   // This prevents any downloaded archive from touching or overwriting local workspace source trees.
@@ -467,6 +483,9 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
   if (!isSemVerGreaterMain(version, currentAppVersion)) {
     console.warn(`[PAIOS Updater] Blocked: Target version (${version}) is not strictly newer than current (${currentAppVersion}).`);
     return { success: false, error: 'Downgrade or duplicate version blocked by SemVer policy', updated: false };
+  }
+  if (!/^[a-f0-9]{64}$/i.test(String(sha256 || ''))) {
+    return { success: false, error: 'Update manifest must include a SHA-256 checksum', updated: false };
   }
 
   const updatesDir = path.join(app.getPath('userData'), 'updates');
@@ -502,6 +521,10 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
   let extractedSuccessfully = false;
 
   if (zipToApply && fs.existsSync(zipToApply)) {
+    const actualHash = crypto.createHash('sha256').update(fs.readFileSync(zipToApply)).digest('hex');
+    if (actualHash.toLowerCase() !== String(sha256).toLowerCase()) {
+      return { success: false, error: 'Downloaded update checksum mismatch', updated: false };
+    }
     console.log('[PAIOS Updater] Extracting update package:', zipToApply);
     const tempExtractDir = path.join(updatesDir, 'temp_extract');
     if (fs.existsSync(tempExtractDir)) {
@@ -578,7 +601,8 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
 
 // IPC Handler: Open External Browser Link
 ipcMain.handle('paios:open-external', async (event, targetUrl) => {
-  if (targetUrl) {
+  if (event.sender !== mainWindow?.webContents) return false;
+  if (typeof targetUrl === 'string' && /^https:\/\//i.test(targetUrl)) {
     require('electron').shell.openExternal(targetUrl);
     return true;
   }

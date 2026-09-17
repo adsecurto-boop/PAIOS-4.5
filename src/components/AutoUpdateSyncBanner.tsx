@@ -48,28 +48,13 @@ export const AutoUpdateSyncBanner: React.FC<AutoUpdateSyncBannerProps> = ({ comp
 
   const triggerGitCommitAutoUpdate = async () => {
     setIsUpdating(true);
-    const nextHash = `commit_${Math.random().toString(36).substring(2, 8)}`;
-    
     try {
-      // Publish new version to server endpoint
-      await fetch('/api/version/publish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gitCommit: nextHash,
-          releaseNotes: 'New Git commit successfully auto-published across connected clients.',
-        }),
-      });
-
-      // Check version update manifest
+      // Releases are published by CI; clients only check the signed manifest.
       await checkForAppUpdates();
     } catch (err) {
       console.warn('Failed to publish version to server:', err);
     } finally {
-      const event = new CustomEvent('paios_autoupdate_event', {
-        detail: { commitHash: nextHash, timestamp: Date.now() },
-      });
-      window.dispatchEvent(event);
+      setIsUpdating(false);
     }
   };
 

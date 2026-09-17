@@ -13,7 +13,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { NavTab, ActivityLog, Task, TimelineEntry, StudyCard, JournalEntry, MorningCheckIn, EveningReview, AiChatMessage, UserSettings, SearchResults, Medication, DoseEvent, DoseStatus, RefillInventory, VitalSign, DoctorContact, Appointment, AdaptiveTimetableResponse, TimetableStatus } from './types';
-import { PAIOSStorage, getTodayDateString, getStartOfDayMillis } from './storage';
+import { PAIOSStorage, getAuthToken, getTodayDateString, getStartOfDayMillis } from './storage';
 import { TopHeaderBar } from './components/TopHeaderBar';
 import { MiniTimerPlayer } from './components/MiniTimerPlayer';
 import { StartActivityModal } from './components/StartActivityModal';
@@ -560,7 +560,7 @@ export const App: React.FC = () => {
     try {
       const res = await fetch('/api/ai/generate-timeline', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) },
         body: JSON.stringify({
           userContext: contextStr,
           currentTimeStr,
@@ -703,7 +703,7 @@ export const App: React.FC = () => {
     try {
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}) },
         body: JSON.stringify({
           userText,
           userContext: contextStr,
