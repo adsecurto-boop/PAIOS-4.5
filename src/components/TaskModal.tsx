@@ -31,6 +31,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
           </div>
           <button
             onClick={onDismiss}
+            aria-label="Close modal"
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -62,6 +63,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
                 <button
                   key={cat}
                   type="button"
+                  aria-pressed={category === cat}
                   onClick={() => setCategory(cat)}
                   className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                     category === cat
@@ -78,6 +80,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
           <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
             <button
               type="button"
+              aria-label="Pin to Priority Today"
+              aria-pressed={isPriority}
               onClick={() => setIsPriority(!isPriority)}
               className={`p-2 rounded-lg transition-colors ${
                 isPriority ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800 text-slate-400'
