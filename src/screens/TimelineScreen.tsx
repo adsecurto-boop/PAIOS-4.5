@@ -326,6 +326,7 @@ export const TimelineScreen: React.FC<TimelineScreenProps> = ({
             <form onSubmit={handleAddGoal} className="flex items-center gap-2">
               <input
                 type="text"
+                aria-label="Add goal"
                 placeholder="Add new long-term goal (e.g. Master Playwright Python Framework)..."
                 value={newGoalInput}
                 onChange={(e) => setNewGoalInput(e.target.value)}
