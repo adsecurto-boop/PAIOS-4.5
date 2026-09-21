@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Search, CheckCircle, History, Zap, BookOpen, Brain } from 'lucide-react';
 import { SearchResults } from '../types';
 
@@ -10,6 +10,16 @@ interface SearchModalProps {
 
 export const SearchModal: React.FC<SearchModalProps> = ({ searchResults, onSearch, onDismiss }) => {
   const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onDismiss();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onDismiss]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const q = e.target.value;
@@ -25,7 +35,12 @@ export const SearchModal: React.FC<SearchModalProps> = ({ searchResults, onSearc
     searchResults.studyCards.length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-start justify-center p-4 pt-16">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Search dialog"
+      className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-start justify-center p-4 pt-16"
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh] animate-in fade-in zoom-in-95 duration-150">
         <div className="p-4 border-b border-slate-800 flex items-center gap-3">
           <Search className="w-5 h-5 text-indigo-400" />
