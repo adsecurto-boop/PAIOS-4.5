@@ -122,7 +122,7 @@ export const PotDepositWithdrawModal: React.FC<PotDepositWithdrawModalProps> = (
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white">
+          <button onClick={onClose} aria-label="Close modal" className="text-slate-400 hover:text-white">
             <X className="w-5 h-5" />
           </button>
         </div>

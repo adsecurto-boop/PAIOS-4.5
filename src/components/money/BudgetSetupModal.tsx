@@ -192,6 +192,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
 
           <button
             onClick={onClose}
+            aria-label="Close modal"
             className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -345,6 +346,7 @@ export const BudgetSetupModal: React.FC<BudgetSetupModalProps> = ({
                     <button
                       type="button"
                       onClick={handleAddVariableStream}
+                      aria-label="Add variable income stream"
                       className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shrink-0"
                     >
                       <Plus className="w-4 h-4" />
