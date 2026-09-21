@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, CheckCircle, Pin, Tag, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, CheckCircle, Pin, Tag } from 'lucide-react';
 
 interface TaskModalProps {
   onDismiss: () => void;
@@ -13,6 +13,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
   const [category, setCategory] = useState('Work');
   const [isPriority, setIsPriority] = useState(false);
   const [description, setDescription] = useState('');
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onDismiss();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onDismiss]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +42,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
           <button
             onClick={onDismiss}
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close task modal"
           >
             <X className="w-5 h-5" />
           </button>
@@ -63,6 +74,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
                   key={cat}
                   type="button"
                   onClick={() => setCategory(cat)}
+                  aria-pressed={category === cat}
                   className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                     category === cat
                       ? 'bg-indigo-600 text-white font-semibold'
@@ -79,6 +91,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
             <button
               type="button"
               onClick={() => setIsPriority(!isPriority)}
+              aria-label="Pin task to priority today"
+              aria-pressed={isPriority}
               className={`p-2 rounded-lg transition-colors ${
                 isPriority ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800 text-slate-400'
               }`}
