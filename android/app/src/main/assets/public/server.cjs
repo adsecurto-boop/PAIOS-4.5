@@ -30,15 +30,21 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // server.ts
 var server_exports = {};
 __export(server_exports, {
+  PAIOS_AI_PROVIDER: () => PAIOS_AI_PROVIDER,
+  PAIOS_OLLAMA_BASE_URL: () => PAIOS_OLLAMA_BASE_URL,
+  PAIOS_OLLAMA_MODEL: () => PAIOS_OLLAMA_MODEL,
   default: () => server_default,
+  executeOllamaChatServer: () => executeOllamaChatServer,
   requireAuth: () => requireAuth
 });
 module.exports = __toCommonJS(server_exports);
 var import_express = __toESM(require("express"), 1);
 var import_path2 = __toESM(require("path"), 1);
+var import_fs2 = __toESM(require("fs"), 1);
 var import_genai = require("@google/genai");
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
+var import_crypto = __toESM(require("crypto"), 1);
 
 // src/server/db.ts
 var import_better_sqlite3 = __toESM(require("better-sqlite3"), 1);
@@ -123,7 +129,167 @@ var db_default = db;
 var _dirname = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 var app = (0, import_express.default)();
 var PORT = process.env.PORT || 3001;
-var JWT_SECRET = process.env.JWT_SECRET || "paios5_ubuntu_sqlite_jwt_secret";
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET must be configured in production.");
+}
+var JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "test" ? "paios-test-jwt-secret-not-for-production" : import_crypto.default.randomBytes(32).toString("hex"));
+var PAIOS_AI_PROVIDER = (process.env.PAIOS_AI_PROVIDER || "gemini").toLowerCase();
+var PAIOS_OLLAMA_MODEL = process.env.PAIOS_OLLAMA_MODEL || "qwen2.5:7b";
+var PAIOS_OLLAMA_BASE_URL = (process.env.PAIOS_OLLAMA_BASE_URL || "http://localhost:11434").replace(/\/+$/, "");
+function resolveLocalOllamaUrl(candidate) {
+  if (!candidate) return PAIOS_OLLAMA_BASE_URL;
+  const parsed = new URL(candidate);
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname) || !["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Only a local Ollama endpoint may be selected from the client.");
+  }
+  return parsed.toString().replace(/\/$/, "");
+}
+async function executeOllamaChatServer(params) {
+  const baseUrl = resolveLocalOllamaUrl(params.baseUrl);
+  const model = params.model || PAIOS_OLLAMA_MODEL;
+  const messages = [{ role: "system", content: params.systemInstruction }];
+  if (Array.isArray(params.history) && params.history.length > 0) {
+    const recent = params.history.slice(-14);
+    for (const msg of recent) {
+      if (msg && msg.text && typeof msg.text === "string" && msg.text.trim()) {
+        const isUserMsg = msg.isUser || msg.sender === "USER" || msg.role === "user";
+        messages.push({
+          role: isUserMsg ? "user" : "assistant",
+          content: msg.text.trim()
+        });
+      }
+    }
+  }
+  if (messages.length <= 1 || messages[messages.length - 1].content !== params.cleanUserText) {
+    messages.push({
+      role: "user",
+      content: params.cleanUserText
+    });
+  }
+  const tools = [
+    {
+      type: "function",
+      function: {
+        name: "record_medication_dose",
+        description: "Records or updates medication dose adherence status in user health ledger.",
+        parameters: {
+          type: "object",
+          properties: {
+            medication_ids: { type: "array", items: { type: "string" } },
+            action: { type: "string", enum: ["TAKEN", "SKIPPED", "TAKEN_LATE"] },
+            timestamp: { type: "number" },
+            notes: { type: "string" }
+          },
+          required: ["action"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "log_transaction",
+        description: "Records a financial inflow or outflow in the money manager ledger.",
+        parameters: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            amount: { type: "number" },
+            type: { type: "string", enum: ["INFLOW", "OUTFLOW"] },
+            category: { type: "string" },
+            notes: { type: "string" }
+          },
+          required: ["title", "amount"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "create_task",
+        description: "Creates a new actionable task in the user PAIOS task list.",
+        parameters: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            priority: { type: "string", enum: ["HIGH", "NORMAL", "LOW"] },
+            dueDate: { type: "string" }
+          },
+          required: ["title"]
+        }
+      }
+    }
+  ];
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6e4);
+  const res = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages,
+      tools,
+      stream: false
+    }),
+    signal: controller.signal
+  });
+  clearTimeout(timeoutId);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Ollama HTTP ${res.status}: ${text || res.statusText}`);
+  }
+  const data = await res.json();
+  const rawContent = data.message?.content || "";
+  const toolCalls = data.message?.tool_calls || [];
+  let actionType = null;
+  let actionPayloadJson = null;
+  const actionRegex = /\[\[ACTION:\s*(\{.*?\})\s*\]\]/s;
+  const match = actionRegex.exec(rawContent);
+  if (match) {
+    actionPayloadJson = match[1];
+    if (actionPayloadJson.includes("ADD_TASK")) actionType = "ADD_TASK";
+    else if (actionPayloadJson.includes("START_ACTIVITY")) actionType = "START_ACTIVITY";
+    else if (actionPayloadJson.includes("SAVE_NOTE")) actionType = "SAVE_NOTE";
+    else if (actionPayloadJson.includes("LOG_DOSE") || actionPayloadJson.includes("record_medication_dose")) actionType = "LOG_DOSE";
+    else if (actionPayloadJson.includes("LOG_TRANSACTION") || actionPayloadJson.includes("log_transaction")) actionType = "LOG_TRANSACTION";
+    else if (actionPayloadJson.includes("create_task")) actionType = "create_task";
+    else if (actionPayloadJson.includes("LOG_SYMPTOM")) actionType = "LOG_SYMPTOM";
+    else if (actionPayloadJson.includes("BOOK_APPOINTMENT")) actionType = "BOOK_APPOINTMENT";
+  }
+  if (!actionType && toolCalls.length > 0) {
+    const call = toolCalls[0]?.function;
+    if (call) {
+      const fnName = call.name;
+      const fnArgs = typeof call.arguments === "string" ? JSON.parse(call.arguments || "{}") : call.arguments || {};
+      if (fnName === "record_medication_dose" || fnName === "log_dose") {
+        actionType = "LOG_DOSE";
+        actionPayloadJson = JSON.stringify({
+          type: "record_medication_dose",
+          medication_ids: fnArgs.medication_ids || ["all_due"],
+          action: fnArgs.action || "TAKEN",
+          notes: fnArgs.notes || "Logged via Ollama Tool Call",
+          timestamp: fnArgs.timestamp || Date.now()
+        });
+      } else if (fnName === "log_transaction") {
+        actionType = "LOG_TRANSACTION";
+        actionPayloadJson = JSON.stringify({ type: "log_transaction", ...fnArgs });
+      } else if (fnName === "create_task") {
+        actionType = "create_task";
+        actionPayloadJson = JSON.stringify({ type: "create_task", ...fnArgs });
+      }
+    }
+  }
+  const cleanReply = rawContent.replace(actionRegex, "").trim() || (actionType ? `Action ${actionType} recorded successfully.` : "");
+  return {
+    reply: cleanReply,
+    actionType,
+    actionPayloadJson,
+    usage: {
+      promptTokens: data.prompt_eval_count,
+      completionTokens: data.eval_count,
+      totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
+    }
+  };
+}
 app.use(import_express.default.json());
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -154,6 +320,204 @@ function requireAuth(req, res, next) {
 }
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", app: "PAIOS" });
+});
+app.get("/assistant/status", requireAuth, async (req, res) => {
+  const requestedProvider = (req.query.provider || PAIOS_AI_PROVIDER).toLowerCase();
+  let baseUrl;
+  try {
+    baseUrl = resolveLocalOllamaUrl(req.query.baseUrl);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const targetModel = req.query.model || PAIOS_OLLAMA_MODEL;
+  let ollamaAvailable = false;
+  let ollamaModels = [];
+  let hasModel = false;
+  let ollamaError;
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 3e3);
+    const resp = await fetch(`${baseUrl}/api/tags`, { signal: controller.signal });
+    clearTimeout(t);
+    if (resp.ok) {
+      const data = await resp.json();
+      ollamaModels = (data?.models || []).map((m) => typeof m === "string" ? m : m?.name || "").filter(Boolean);
+      ollamaAvailable = true;
+      const targetClean = targetModel.toLowerCase().trim();
+      hasModel = ollamaModels.some((n) => {
+        const lower = n.toLowerCase().trim();
+        return lower === targetClean || lower === `${targetClean}:latest` || lower.startsWith(`${targetClean}:`) || targetClean.startsWith(`${lower}:`);
+      });
+    } else {
+      ollamaError = `HTTP ${resp.status}: ${resp.statusText}`;
+    }
+  } catch (err) {
+    ollamaError = err?.message || "Connection Refused";
+  }
+  const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.startsWith("test-"));
+  const activeProvider = requestedProvider === "ollama" ? "ollama" : "gemini";
+  const isAvailable = activeProvider === "ollama" ? ollamaAvailable && hasModel : hasGeminiKey;
+  res.json({
+    provider: activeProvider,
+    model: activeProvider === "ollama" ? targetModel : process.env.GEMINI_MODEL || "gemini-3.7-flash",
+    available: isAvailable,
+    localEndpoint: baseUrl,
+    ollamaStatus: {
+      available: ollamaAvailable,
+      baseUrl,
+      models: ollamaModels,
+      hasModel,
+      model: targetModel,
+      error: ollamaError
+    },
+    geminiStatus: {
+      available: hasGeminiKey,
+      hasApiKey: hasGeminiKey
+    }
+  });
+});
+app.post("/assistant/test", requireAuth, async (req, res) => {
+  const provider = (req.body?.provider || PAIOS_AI_PROVIDER).toLowerCase();
+  let baseUrl;
+  try {
+    baseUrl = resolveLocalOllamaUrl(req.body?.baseUrl);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const targetModel = req.body?.model || PAIOS_OLLAMA_MODEL;
+  const testPrompt = req.body?.prompt || "Hello! Respond with a 1-sentence confirmation that PAIOS is connected.";
+  const startTime = Date.now();
+  if (provider === "ollama") {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 2e4);
+      const resp = await fetch(`${baseUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: targetModel,
+          messages: [{ role: "user", content: testPrompt }],
+          stream: false
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(t);
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        return res.status(resp.status).json({
+          success: false,
+          provider: "ollama",
+          model: targetModel,
+          error: `Ollama error HTTP ${resp.status}: ${errText}`,
+          latencyMs: Date.now() - startTime
+        });
+      }
+      const data = await resp.json();
+      const reply = data.message?.content || "Model responded with empty message.";
+      return res.json({
+        success: true,
+        provider: "ollama",
+        model: targetModel,
+        reply,
+        latencyMs: Date.now() - startTime
+      });
+    } catch (err) {
+      return res.status(503).json({
+        success: false,
+        provider: "ollama",
+        model: targetModel,
+        error: `Ollama connection failed: ${err.message || "Unreachable"}`,
+        latencyMs: Date.now() - startTime
+      });
+    }
+  } else {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey.startsWith("test-")) {
+      return res.json({
+        success: true,
+        provider: "gemini",
+        model: "gemini-3.7-flash",
+        reply: "Gemini test response (running with test / mock credentials).",
+        latencyMs: Date.now() - startTime
+      });
+    }
+    try {
+      const ai = new import_genai.GoogleGenAI({ apiKey });
+      const resp = await ai.models.generateContent({
+        model: "gemini-3.7-flash",
+        contents: [{ role: "user", parts: [{ text: testPrompt }] }]
+      });
+      return res.json({
+        success: true,
+        provider: "gemini",
+        model: "gemini-3.7-flash",
+        reply: resp.text || "",
+        latencyMs: Date.now() - startTime
+      });
+    } catch (err) {
+      return res.status(503).json({
+        success: false,
+        provider: "gemini",
+        model: "gemini-3.7-flash",
+        error: `Gemini call failed: ${err.message || err}`,
+        latencyMs: Date.now() - startTime
+      });
+    }
+  }
+});
+var dynamicVersionManifest = {
+  version: "4.6.1",
+  buildNumber: "9",
+  buildTimestamp: Date.now(),
+  gitCommit: "c3249c0",
+  releaseNotes: "PAIOS v4.6.1: Balance Sheet Cashflow Routing, Savings Pots Isolation, Downgrade Protection & Net Worth Integrity",
+  platforms: {
+    windows: {
+      url: "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip",
+      filename: "PAIOS-Desktop-Windows-x64.zip"
+    },
+    android: {
+      url: "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk",
+      filename: "app-release.apk"
+    }
+  }
+};
+app.get("/api/version", (_req, res) => {
+  const versionPath = import_path2.default.join(_dirname, "dist", "version.json");
+  if (import_fs2.default.existsSync(versionPath)) {
+    try {
+      const data = JSON.parse(import_fs2.default.readFileSync(versionPath, "utf-8"));
+      return res.json(data);
+    } catch (e) {
+    }
+  }
+  res.json(dynamicVersionManifest);
+});
+app.post("/api/version/publish", (_req, res) => {
+  res.status(403).json({ error: "Version publishing is restricted to the release pipeline." });
+});
+app.get("/api/version/download/:platform", (req, res) => {
+  const platform = req.params.platform;
+  if (platform === "android") {
+    const apkPath = import_path2.default.join(_dirname, "android", "app", "build", "outputs", "apk", "release", "app-release.apk");
+    const debugApkPath = import_path2.default.join(_dirname, "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk");
+    if (import_fs2.default.existsSync(apkPath)) {
+      return res.download(apkPath, "PAIOS-Release.apk");
+    } else if (import_fs2.default.existsSync(debugApkPath)) {
+      return res.download(debugApkPath, "PAIOS-Debug.apk");
+    }
+    return res.redirect("https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk");
+  } else if (platform === "windows") {
+    const zipPath = import_path2.default.join(_dirname, "dist-electron", "PAIOS-Desktop-Windows-x64.zip");
+    const webZipPath = import_path2.default.join(_dirname, "dist", "PAIOS-Web-Dist.zip");
+    if (import_fs2.default.existsSync(zipPath)) {
+      return res.download(zipPath, "PAIOS-Desktop-Windows-x64.zip");
+    } else if (import_fs2.default.existsSync(webZipPath)) {
+      return res.download(webZipPath, "PAIOS-Web-Dist.zip");
+    }
+    return res.redirect("https://raw.githubusercontent.com/adsecurto-boop/PAIOS-4.5/main/public/version.json");
+  }
+  res.status(404).json({ error: "Platform not found" });
 });
 app.post("/api/auth/register", (req, res) => {
   const { email, password, displayName } = req.body || {};
@@ -310,6 +674,9 @@ app.post("/api/version/publish", (req, res) => {
     serverVersion: currentServerVersion
   });
 });
+app.use(["/api/sync/vault", "/api/sync/user", "/api/sync/auth"], (_req, res) => {
+  res.status(410).json({ error: "Legacy sync endpoint retired. Use authenticated /api/sync endpoints." });
+});
 var vaultStore = /* @__PURE__ */ new Map();
 var userStore = /* @__PURE__ */ new Map();
 var authStore = /* @__PURE__ */ new Map();
@@ -395,7 +762,7 @@ app.post("/api/sync/auth", (req, res) => {
 });
 app.post("/api/ai/chat", requireAuth, async (req, res) => {
   try {
-    const { message, userText, userContext, modelName, role, taskComplexity, history } = req.body || {};
+    const { message, userText, userContext, modelName, role, taskComplexity, history, aiProvider, ollamaModel, ollamaBaseUrl } = req.body || {};
     const promptText = message !== void 0 ? message : userText;
     if (!promptText || typeof promptText !== "string" || !promptText.trim()) {
       return res.status(400).json({ error: "Message payload is required and cannot be empty" });
@@ -419,34 +786,14 @@ app.post("/api/ai/chat", requireAuth, async (req, res) => {
         });
       }
     }
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (process.env.NODE_ENV === "test" || !apiKey || apiKey.startsWith("test-")) {
-      const mockReply = `Server-side AI response for: ${cleanUserText}`;
-      return res.status(200).json({
-        reply: mockReply,
-        text: mockReply,
+    if (/\b(double.*dose|take.*two.*pills|take.*extra.*pill|increase.*dose|decrease.*dose|change.*dosage|stop.*taking.*medication)\b/i.test(cleanUserText)) {
+      const refusalText = `\u26A0\uFE0F MEDICAL SAFETY NOTICE: PAIOS is strictly an organizational decision-support assistant and cannot alter, adjust, or prescribe medication dosages. Never double up on a missed dose. Please consult your prescribing doctor or pharmacist before making any changes to your medication schedule.`;
+      return res.json({
+        reply: refusalText,
+        text: refusalText,
         actionType: null,
-        actionPayloadJson: null,
-        usage: { totalTokens: 32 }
+        actionPayloadJson: null
       });
-    }
-    const ai = new import_genai.GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build"
-        }
-      }
-    });
-    let modelCandidates = [];
-    const lowerModel = (modelName || "").toLowerCase();
-    const mode = taskComplexity || (lowerModel.includes("pro") ? "complex" : lowerModel.includes("lite") ? "fast" : "general");
-    if (mode === "complex") {
-      modelCandidates = ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemini-3.5-flash"];
-    } else if (mode === "fast") {
-      modelCandidates = ["gemini-3.1-flash-lite", "gemini-3.7-flash", "gemini-3.5-flash"];
-    } else {
-      modelCandidates = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"];
     }
     let roleDescription = "You are PAIOS (Personal AI Operating System), a calm, highly intelligent personal productivity, life, and health assistant.";
     if (role === "sdet_mentor") {
@@ -479,13 +826,131 @@ or
 or
 [[ACTION: {"type": "SAVE_NOTE", "text": "Investigate API timeout issue"}]]
 or
-[[ACTION: {"type": "LOG_DOSE", "medicationName": "Sertraline 50 mg", "status": "TAKEN"}]]
+[[ACTION: {"type": "LOG_DOSE", "medication_ids": ["med_1"], "action": "TAKEN", "notes": "Morning dose taken"}]]
 or
 [[ACTION: {"type": "LOG_SYMPTOM", "symptomName": "Dizziness", "severity": 3}]]
+or
+[[ACTION: {"type": "BOOK_APPOINTMENT", "doctorName": "Dr Devendra Ratnani", "dateString": "2026-09-02", "timeString": "10:30", "reason": "Follow-up"}]]
 
 Active PAIOS Context & Metadata:
 ${userContext || "No context available."}
 `.trim();
+    const effectiveProvider = (aiProvider || PAIOS_AI_PROVIDER).toLowerCase();
+    const effectiveOllamaModel = ollamaModel || PAIOS_OLLAMA_MODEL;
+    const effectiveOllamaBaseUrl = (ollamaBaseUrl || PAIOS_OLLAMA_BASE_URL).replace(/\/+$/, "");
+    if (effectiveProvider === "ollama") {
+      try {
+        const ollamaRes = await executeOllamaChatServer({
+          cleanUserText,
+          systemInstruction,
+          history,
+          model: effectiveOllamaModel,
+          baseUrl: effectiveOllamaBaseUrl
+        });
+        return res.status(200).json({
+          reply: ollamaRes.reply,
+          text: ollamaRes.reply,
+          actionType: ollamaRes.actionType,
+          actionPayloadJson: ollamaRes.actionPayloadJson,
+          usage: ollamaRes.usage,
+          provider: "ollama",
+          model: effectiveOllamaModel
+        });
+      } catch (ollamaErr) {
+        console.warn("Ollama chat execution failed, checking fallback:", ollamaErr?.message || ollamaErr);
+        if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.startsWith("test-")) {
+          return res.status(503).json({
+            error: `Local Ollama (${effectiveOllamaModel} at ${effectiveOllamaBaseUrl}) unavailable: ${ollamaErr?.message || "Connection refused"}. Ensure Ollama daemon is running (\`ollama serve\`) and '${effectiveOllamaModel}' is pulled.`
+          });
+        }
+      }
+    }
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (process.env.NODE_ENV === "test" || !apiKey || apiKey.startsWith("test-")) {
+      if (process.env.NODE_ENV !== "test" && !apiKey) {
+        try {
+          const fallbackRes = await executeOllamaChatServer({
+            cleanUserText,
+            systemInstruction,
+            history,
+            model: effectiveOllamaModel,
+            baseUrl: effectiveOllamaBaseUrl
+          });
+          return res.status(200).json({
+            reply: fallbackRes.reply,
+            text: fallbackRes.reply,
+            actionType: fallbackRes.actionType,
+            actionPayloadJson: fallbackRes.actionPayloadJson,
+            usage: fallbackRes.usage,
+            provider: "ollama",
+            model: effectiveOllamaModel,
+            fallback: true
+          });
+        } catch (ollamaFallbackErr) {
+        }
+      }
+      let actionType2 = null;
+      let actionPayloadJson2 = null;
+      let mockReply = `Server-side AI response for: ${cleanUserText}`;
+      if (/\b(take|took|mark.*dose|record.*dose|log.*dose|taken)\b/i.test(cleanUserText)) {
+        actionType2 = "LOG_DOSE";
+        actionPayloadJson2 = JSON.stringify({
+          type: "record_medication_dose",
+          action: "TAKEN",
+          medication_ids: ["all_due"],
+          notes: "Dose marked taken via AI Assistant conversation",
+          timestamp: Date.now()
+        });
+        mockReply = `I have marked your scheduled medication dose as taken in your Health Ledger.`;
+      } else if (/\b(spent|spend|paid|received|earned|deposit|expense|income|transaction)\b/i.test(cleanUserText)) {
+        actionType2 = "LOG_TRANSACTION";
+        const numMatch = cleanUserText.match(/\d+(\.\d+)?/);
+        const amount = numMatch ? parseFloat(numMatch[0]) : 50;
+        const isInflow = /\b(received|earned|deposit|income|salary)\b/i.test(cleanUserText);
+        actionPayloadJson2 = JSON.stringify({
+          type: "log_transaction",
+          flowType: isInflow ? "INFLOW" : "OUTFLOW",
+          amount,
+          title: cleanUserText.slice(0, 40),
+          category: isInflow ? "Salary" : "Food"
+        });
+        mockReply = `I have logged this ${isInflow ? "income" : "expense"} transaction of ${amount} in your Ledger.`;
+      } else if (/\b(create.*task|add.*task|remind.*to)\b/i.test(cleanUserText)) {
+        actionType2 = "create_task";
+        actionPayloadJson2 = JSON.stringify({
+          type: "create_task",
+          title: cleanUserText.replace(/^(create|add|remind me to)\s+/i, ""),
+          priority: "NORMAL"
+        });
+        mockReply = `I have added this task to your task list.`;
+      }
+      return res.status(200).json({
+        reply: mockReply,
+        text: mockReply,
+        actionType: actionType2,
+        actionPayloadJson: actionPayloadJson2,
+        usage: { totalTokens: 32 },
+        provider: "gemini"
+      });
+    }
+    const ai = new import_genai.GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build"
+        }
+      }
+    });
+    let modelCandidates = [];
+    const lowerModel = (modelName || "").toLowerCase();
+    const mode = taskComplexity || (lowerModel.includes("pro") ? "complex" : lowerModel.includes("lite") ? "fast" : "general");
+    if (mode === "complex") {
+      modelCandidates = ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemini-3.5-flash"];
+    } else if (mode === "fast") {
+      modelCandidates = ["gemini-3.1-flash-lite", "gemini-3.7-flash", "gemini-3.5-flash"];
+    } else {
+      modelCandidates = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"];
+    }
     const contents = [];
     if (Array.isArray(history) && history.length > 0) {
       const recentHistory = history.slice(-14);
@@ -508,11 +973,75 @@ ${userContext || "No context available."}
     let fullText = "";
     let lastError = null;
     let usageMetadata = null;
+    let geminiFunctionCalls = [];
+    const geminiTools = [
+      {
+        functionDeclarations: [
+          {
+            name: "record_medication_dose",
+            description: "Records or updates medication dose adherence status (taken, skipped, or taken late) in the user health ledger.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                medication_ids: {
+                  type: "ARRAY",
+                  items: { type: "STRING" },
+                  description: "Array of medication IDs or names, or ['all_due']"
+                },
+                action: {
+                  type: "STRING",
+                  enum: ["TAKEN", "SKIPPED", "TAKEN_LATE"],
+                  description: "The adherence status for the dose"
+                },
+                timestamp: {
+                  type: "NUMBER",
+                  description: "Unix timestamp in milliseconds when dose was taken"
+                },
+                notes: {
+                  type: "STRING",
+                  description: "Optional clinical adherence observation or note"
+                }
+              },
+              required: ["action"]
+            }
+          },
+          {
+            name: "log_transaction",
+            description: "Records a financial inflow (income/salary) or outflow (expense/spend) into the PAIOS money manager ledger.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                title: { type: "STRING", description: "Transaction title or description" },
+                amount: { type: "NUMBER", description: "Monetary amount" },
+                type: { type: "STRING", enum: ["INFLOW", "OUTFLOW"], description: "Transaction stream" },
+                category: { type: "STRING", description: "Budget category e.g. Food, Travel, Salary, Freelance, Health" },
+                notes: { type: "STRING", description: "Optional transaction notes or remarks" }
+              },
+              required: ["title", "amount"]
+            }
+          },
+          {
+            name: "create_task",
+            description: "Creates a new actionable task in the user PAIOS task list.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                title: { type: "STRING", description: "Task title" },
+                priority: { type: "STRING", enum: ["HIGH", "NORMAL", "LOW"], description: "Task priority level" },
+                dueDate: { type: "STRING", description: "Due date in YYYY-MM-DD format" }
+              },
+              required: ["title"]
+            }
+          }
+        ]
+      }
+    ];
     for (const targetModel of modelCandidates) {
       try {
         const callConfig = {
           systemInstruction,
-          temperature: 0.7
+          temperature: 0.7,
+          tools: geminiTools
         };
         if (targetModel === "gemini-3.1-pro-preview" || mode === "complex") {
           callConfig.thinkingConfig = {
@@ -526,6 +1055,9 @@ ${userContext || "No context available."}
         });
         fullText = response.text || "";
         usageMetadata = response.usageMetadata;
+        if (response.functionCalls && response.functionCalls.length > 0) {
+          geminiFunctionCalls = response.functionCalls;
+        }
         if (fullText) break;
       } catch (err) {
         lastError = err;
@@ -533,10 +1065,31 @@ ${userContext || "No context available."}
         await new Promise((r) => setTimeout(r, 300));
       }
     }
-    if (!fullText) {
-      return res.status(502).json({
-        error: `AI gateway communication failed: ${lastError?.message || "502 Bad Gateway"}`
-      });
+    if (!fullText && geminiFunctionCalls.length === 0) {
+      try {
+        console.warn("Gemini models failed. Attempting clean fallback to local Ollama qwen2.5:7b...");
+        const fallbackRes = await executeOllamaChatServer({
+          cleanUserText,
+          systemInstruction,
+          history,
+          model: effectiveOllamaModel,
+          baseUrl: effectiveOllamaBaseUrl
+        });
+        return res.status(200).json({
+          reply: fallbackRes.reply,
+          text: fallbackRes.reply,
+          actionType: fallbackRes.actionType,
+          actionPayloadJson: fallbackRes.actionPayloadJson,
+          usage: fallbackRes.usage,
+          provider: "ollama",
+          model: effectiveOllamaModel,
+          fallback: true
+        });
+      } catch (ollamaErr) {
+        return res.status(502).json({
+          error: `AI gateway communication failed (Gemini error: ${lastError?.message || "Failed"}; Ollama fallback: ${ollamaErr?.message || "Unavailable"})`
+        });
+      }
     }
     let actionType = null;
     let actionPayloadJson = null;
@@ -547,14 +1100,48 @@ ${userContext || "No context available."}
       if (actionPayloadJson.includes("ADD_TASK")) actionType = "ADD_TASK";
       else if (actionPayloadJson.includes("START_ACTIVITY")) actionType = "START_ACTIVITY";
       else if (actionPayloadJson.includes("SAVE_NOTE")) actionType = "SAVE_NOTE";
+      else if (actionPayloadJson.includes("LOG_DOSE") || actionPayloadJson.includes("record_medication_dose")) actionType = "LOG_DOSE";
+      else if (actionPayloadJson.includes("LOG_TRANSACTION") || actionPayloadJson.includes("log_transaction")) actionType = "LOG_TRANSACTION";
+      else if (actionPayloadJson.includes("create_task")) actionType = "create_task";
+      else if (actionPayloadJson.includes("LOG_SYMPTOM")) actionType = "LOG_SYMPTOM";
+      else if (actionPayloadJson.includes("BOOK_APPOINTMENT")) actionType = "BOOK_APPOINTMENT";
     }
-    const cleanText = fullText.replace(actionRegex, "").trim();
+    if (!actionType && geminiFunctionCalls.length > 0) {
+      const call = geminiFunctionCalls[0];
+      if (call.name === "record_medication_dose" || call.name === "log_dose") {
+        actionType = "LOG_DOSE";
+        actionPayloadJson = JSON.stringify({
+          type: "record_medication_dose",
+          medication_ids: call.args?.medication_ids || ["all_due"],
+          action: call.args?.action || "TAKEN",
+          notes: call.args?.notes || "Logged via PAIOS AI Tool Execution",
+          timestamp: call.args?.timestamp || Date.now()
+        });
+      } else if (call.name === "log_transaction") {
+        actionType = "LOG_TRANSACTION";
+        actionPayloadJson = JSON.stringify({ type: "log_transaction", ...call.args });
+      } else if (call.name === "create_task") {
+        actionType = "create_task";
+        actionPayloadJson = JSON.stringify({ type: "create_task", ...call.args });
+      } else if (call.name === "add_task") {
+        actionType = "ADD_TASK";
+        actionPayloadJson = JSON.stringify({ type: "ADD_TASK", ...call.args });
+      } else if (call.name === "start_activity") {
+        actionType = "START_ACTIVITY";
+        actionPayloadJson = JSON.stringify({ type: "START_ACTIVITY", ...call.args });
+      } else if (call.name === "save_note") {
+        actionType = "SAVE_NOTE";
+        actionPayloadJson = JSON.stringify({ type: "SAVE_NOTE", ...call.args });
+      }
+    }
+    const cleanText = fullText.replace(actionRegex, "").trim() || (actionType ? `Action ${actionType} recorded successfully.` : "");
     res.status(200).json({
       reply: cleanText,
       text: cleanText,
       actionType,
       actionPayloadJson,
-      usage: usageMetadata
+      usage: usageMetadata,
+      provider: "gemini"
     });
   } catch (err) {
     console.error("Gemini API Error:", err);
@@ -563,14 +1150,52 @@ ${userContext || "No context available."}
     });
   }
 });
-app.post("/api/ai/analyze-content", async (req, res) => {
+app.post("/api/ai/analyze-content", requireAuth, async (req, res) => {
   try {
-    const { prompt, content, taskComplexity = "general", customApiKey } = req.body;
+    const { prompt, content, taskComplexity = "general", aiProvider, ollamaModel, ollamaBaseUrl } = req.body || {};
     if (!content || typeof content !== "string") {
       res.status(400).json({ error: "content is required" });
       return;
     }
-    const apiKey = customApiKey || process.env.GEMINI_API_KEY;
+    const provider = (aiProvider || PAIOS_AI_PROVIDER).toLowerCase();
+    const targetOllamaModel = ollamaModel || PAIOS_OLLAMA_MODEL;
+    const targetOllamaBaseUrl = resolveLocalOllamaUrl(ollamaBaseUrl);
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (provider === "ollama" || !apiKey) {
+      try {
+        const instruction2 = prompt || "Analyze, summarize, or edit the following user text for clarity, key insights, and actionable steps:";
+        const resp = await fetch(`${targetOllamaBaseUrl}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: targetOllamaModel,
+            messages: [
+              { role: "system", content: instruction2 },
+              { role: "user", content }
+            ],
+            stream: false
+          })
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          return res.json({
+            success: true,
+            modelUsed: `ollama:${targetOllamaModel}`,
+            provider: "ollama",
+            taskComplexity,
+            resultText: data.message?.content || ""
+          });
+        }
+      } catch (ollamaErr) {
+        if (!apiKey) {
+          return res.json({
+            success: false,
+            error: `Ollama analysis failed: ${ollamaErr.message}`,
+            resultText: "Local Ollama analysis failed and no Gemini API key is configured."
+          });
+        }
+      }
+    }
     if (!apiKey) {
       res.json({
         success: false,
@@ -732,7 +1357,7 @@ function generateLocalFallbackTimetable(params) {
     blocks
   };
 }
-app.post("/api/ai/generate-timeline", async (req, res) => {
+app.post("/api/ai/generate-timeline", requireAuth, async (req, res) => {
   try {
     const {
       userContext,
@@ -744,10 +1369,9 @@ app.post("/api/ai/generate-timeline", async (req, res) => {
       bedtime = "00:00",
       wakeTime = "07:30",
       adaptationReason,
-      customApiKey,
       modelName
     } = req.body;
-    const apiKey = customApiKey || process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       const fallback = generateLocalFallbackTimetable({
         currentTimeStr,
@@ -943,6 +1567,10 @@ setupMiddleware().catch((err) => {
 var server_default = app;
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  PAIOS_AI_PROVIDER,
+  PAIOS_OLLAMA_BASE_URL,
+  PAIOS_OLLAMA_MODEL,
+  executeOllamaChatServer,
   requireAuth
 });
 //# sourceMappingURL=server.cjs.map

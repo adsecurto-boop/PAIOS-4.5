@@ -19,21 +19,22 @@ import {
   X,
   Check,
   Activity,
-  RefreshCw,
-  ChevronDown,
-  ChevronUp,
-  Terminal
+  CalendarCheck,
+  ListChecks,
+  Sun,
+  Moon,
+  Flame
 } from 'lucide-react';
-import { ActivityLog, Task, TimelineEntry, UserSettings } from '../types';
+import { ActivityLog, Task, TimelineEntry, MorningCheckIn, EveningReview } from '../types';
 import { TimetablePlugin, TimetableProposal } from '../core/plugins/TimetablePlugin';
-import { PreContextBroker, InboundPITRecord } from '../core/broker/PreContextBroker';
-import { PAIOSStorage } from '../storage';
 
 interface TodayScreenProps {
   activeActivity: ActivityLog | null;
   priorities: Task[];
   todayTasks: Task[];
   timelineEntries: TimelineEntry[];
+  checkIns: MorningCheckIn[];
+  reviews: EveningReview[];
   userName: string;
   onStartActivity: (name: string, category: string, note?: string) => void;
   onStartTaskTimer?: (task: Task) => void;
@@ -47,6 +48,8 @@ interface TodayScreenProps {
   onOpenAddTask: () => void;
   onOpenJournal: () => void;
   onOpenStudy: () => void;
+  onOpenCheckIn: () => void;
+  onOpenReview: () => void;
 }
 
 export const TodayScreen: React.FC<TodayScreenProps> = ({
@@ -54,6 +57,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   priorities,
   todayTasks,
   timelineEntries,
+  checkIns,
+  reviews,
   userName,
   onStartActivity,
   onStartTaskTimer,
@@ -67,40 +72,14 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   onOpenAddTask,
   onOpenJournal,
   onOpenStudy,
+  onOpenCheckIn,
+  onOpenReview,
 }) => {
   const [liveSeconds, setLiveSeconds] = useState(0);
   const [activeProposal, setActiveProposal] = useState<TimetableProposal | null>(() =>
     TimetablePlugin.getActiveProposal()
   );
   const [proposalSecondsLeft, setProposalSecondsLeft] = useState(0);
-
-  // Live Pit Stream Ticker State
-  const [pitRecords, setPitRecords] = useState<InboundPITRecord[]>(() => {
-    return PAIOSStorage.getItem<InboundPITRecord[]>('paios_precontext_pit', []) || [];
-  });
-  const [isPitCollapsed, setIsPitCollapsed] = useState(false);
-  const [isForceSyncing, setIsForceSyncing] = useState(false);
-
-  const refreshPit = () => {
-    const records = PAIOSStorage.getItem<InboundPITRecord[]>('paios_precontext_pit', []) || [];
-    setPitRecords(records);
-  };
-
-  const handleForceSync = async () => {
-    setIsForceSyncing(true);
-    try {
-      PreContextBroker.enqueuePIT({
-        source_plugin_id: 'user_action_header',
-        priority: 'high',
-        severity: 'info',
-        payload: { action: 'FORCE_SYNC_CLICK' },
-      });
-      await PreContextBroker.triggerForceSync();
-      refreshPit();
-    } finally {
-      setIsForceSyncing(false);
-    }
-  };
 
   // Live timer ticker update
   useEffect(() => {
@@ -147,15 +126,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     const interval = setInterval(updateProposalState, 1000);
 
     const handleProposalUpdate = () => updateProposalState();
-    const handlePitSynced = () => updateProposalState();
-
     window.addEventListener('timetable_proposal_updated', handleProposalUpdate);
-    window.addEventListener('precontext_pit_synced', handlePitSynced);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('timetable_proposal_updated', handleProposalUpdate);
-      window.removeEventListener('precontext_pit_synced', handlePitSynced);
     };
   }, []);
 
@@ -195,8 +170,116 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     }
   };
 
+  const now = new Date();
+  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
+  const openPriorities = priorities.filter((task) => task.status !== 'COMPLETED');
+  const openTasks = todayTasks.filter((task) => task.status !== 'COMPLETED');
+  const nextTask = openPriorities[0] || openTasks[0];
+  const completedToday = todayTasks.filter((task) => task.status === 'COMPLETED').length;
+  const focusMinutes = timelineEntries
+    .filter((entry) => entry.type === 'ACTIVITY')
+    .reduce((total, entry) => total + (entry.durationMinutes || 0), 0);
+  const todayString = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const todayCheckIn = checkIns.find((checkIn) => checkIn.dateString === todayString);
+  const todayReview = reviews.find((review) => review.dateString === todayString);
+  const hasFocusedToday = focusMinutes > 0 || completedToday > 0;
+  const hasEveningWindow = now.getHours() >= 17;
+
+  const ritualDates = new Set([
+    ...checkIns.map((checkIn) => checkIn.dateString),
+    ...reviews.map((review) => review.dateString),
+  ]);
+  let dailyRhythmStreak = 0;
+  for (let offset = 0; ; offset += 1) {
+    const date = new Date(now);
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - offset);
+    const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    if (!ritualDates.has(dateString)) break;
+    dailyRhythmStreak += 1;
+  }
+
+  const rhythmSteps = [
+    { label: 'Intention', done: Boolean(todayCheckIn), action: onOpenCheckIn },
+    { label: 'Focus', done: hasFocusedToday, action: onOpenStartActivity },
+    { label: 'Reflect', done: Boolean(todayReview), action: onOpenReview },
+  ];
+  const nextRhythmStep = rhythmSteps.find((step) => !step.done);
+
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-5 pb-12">
+      <section className="flex flex-col gap-1 px-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-300">Daily cockpit</p>
+          <h1 className="mt-1 font-heading text-2xl font-bold text-white">{greeting}, {userName}.</h1>
+          <p className="mt-1 text-sm text-slate-400">Choose one meaningful thing, protect the time, then close the loop.</p>
+        </div>
+        <div className="mt-2 flex items-center gap-2 text-xs text-slate-400 sm:mt-0">
+          <CalendarCheck className="h-4 w-4 text-emerald-400" />
+          <span>{completedToday} completed · {openTasks.length} still open</span>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-lg">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Flame className="h-4 w-4 text-amber-400" />
+              <h2 className="font-heading text-sm font-bold text-white">Daily rhythm</h2>
+              {dailyRhythmStreak > 0 && (
+                <span className="rounded-full border border-amber-800/60 bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                  {dailyRhythmStreak}-day return streak
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              {todayCheckIn?.mainGoal
+                ? `Today’s intention: ${todayCheckIn.mainGoal}`
+                : 'A two-minute check-in keeps the day anchored to what matters.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5" aria-label="Daily rhythm progress">
+            {rhythmSteps.map((step, index) => (
+              <React.Fragment key={step.label}>
+                {index > 0 && <div className={`h-px w-4 sm:w-7 ${step.done ? 'bg-emerald-500/70' : 'bg-slate-700'}`} />}
+                <button
+                  type="button"
+                  onClick={step.done ? undefined : step.action}
+                  disabled={step.done}
+                  className={`rounded-lg px-2.5 py-1.5 text-[10px] font-semibold transition-colors ${
+                    step.done
+                      ? 'cursor-default border border-emerald-800/60 bg-emerald-950/40 text-emerald-300'
+                      : 'border border-slate-700 bg-slate-950 text-slate-300 hover:border-indigo-500 hover:text-white'
+                  }`}
+                >
+                  {step.done ? <Check className="mr-1 inline h-3 w-3" /> : null}
+                  {step.label}
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+        {nextRhythmStep && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-indigo-900/60 bg-indigo-950/30 px-3 py-2.5">
+            <p className="text-xs text-indigo-100">
+              {!todayCheckIn
+                ? 'Start small: name the one outcome that would make today worthwhile.'
+                : nextRhythmStep.label === 'Reflect' && !hasEveningWindow
+                  ? 'Your evening reflection will be ready later. For now, protect one focused block.'
+                  : nextRhythmStep.label === 'Reflect'
+                    ? 'Close the loop with a quick reflection while the day is still fresh.'
+                    : 'A short focused block is enough to move the day forward.'}
+            </p>
+            <button
+              type="button"
+              onClick={nextRhythmStep.action}
+              className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-500"
+            >
+              {!todayCheckIn ? <><Sun className="mr-1 inline h-3.5 w-3.5" /> Check in</> : nextRhythmStep.label === 'Reflect' ? <><Moon className="mr-1 inline h-3.5 w-3.5" /> Reflect</> : 'Start focus'}
+            </button>
+          </div>
+        )}
+      </section>
       {/* Rule B1: 60s Contextual Schedule Proposal Banner */}
       {activeProposal && activeProposal.status === 'pending' && proposalSecondsLeft > 0 && (
         <div className="bg-indigo-950/80 border border-indigo-500/50 rounded-2xl p-4 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all animate-pulse-subtle">
@@ -239,7 +322,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </div>
       )}
 
-      {/* 1. Active Timer Hero Card */}
+      {/* The one decision that matters right now. */}
       <section className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/60 border border-slate-800 rounded-2xl p-5 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
 
@@ -314,14 +397,25 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Timer className="w-5 h-5 text-indigo-400" />
-                <h2 className="font-heading font-bold text-lg text-white">Focus Session Timer</h2>
+                <h2 className="font-heading font-bold text-lg text-white">Now</h2>
               </div>
               <span className="text-xs text-slate-400 font-mono">Ready</span>
             </div>
 
-            <p className="text-xs text-slate-300">
-              Start a real-time focus activity to automatically record your timeline logs and track productivity metrics.
-            </p>
+            {nextTask ? (
+              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300">Your next best action</p>
+                    <p className="mt-1 truncate text-base font-semibold text-white">{nextTask.title}</p>
+                    {nextTask.description && <p className="mt-1 line-clamp-2 text-xs text-slate-400">{nextTask.description}</p>}
+                  </div>
+                  <span className="shrink-0 rounded-lg bg-indigo-950 px-2 py-1 text-[10px] font-mono text-indigo-300">{nextTask.category}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-300">Your slate is clear. Capture what matters or begin a deliberate focus session.</p>
+            )}
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <button
@@ -329,125 +423,23 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                 className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-semibold shadow-lg shadow-indigo-600/25 transition-all flex items-center gap-2"
               >
                 <Play className="w-4 h-4 fill-current" />
-                <span>Start New Activity</span>
+                <span>{nextTask ? 'Start focus' : 'Start a focus session'}</span>
               </button>
-
-              <div className="hidden sm:flex items-center gap-1.5 ml-2 text-xs font-mono text-slate-400">
-                <span>Quick start:</span>
+              {nextTask && (
                 <button
-                  onClick={() => onStartActivity('Deep Work', 'Work')}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                  onClick={() => handleStartTask(nextTask)}
+                  className="rounded-xl border border-slate-700 px-4 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:border-indigo-500 hover:text-white"
                 >
-                  Work
+                  Track this task
                 </button>
-                <button
-                  onClick={() => onStartActivity('Study Session', 'Study')}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
-                >
-                  Study
-                </button>
-                <button
-                  onClick={() => onStartActivity('Testing & QA', 'Testing')}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
-                >
-                  Testing
-                </button>
-              </div>
+              )}
             </div>
           </div>
         )}
       </section>
 
-      {/* 2. Live Pit Stream Ticker (Pre-Context Inbound Stream) */}
-      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg transition-all">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500" />
-            </span>
-            <div className="flex items-center gap-2">
-              <Terminal className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
-                Live PIT Stream Ticker
-              </span>
-              <span className="text-[10px] font-mono px-2 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/60 font-semibold">
-                Rule B2 Buffer ({pitRecords.length} staged)
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleForceSync}
-              disabled={isForceSyncing}
-              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold shadow-sm flex items-center gap-1 transition-all disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3 h-3 ${isForceSyncing ? 'animate-spin' : ''}`} />
-              <span>Force Sync</span>
-            </button>
-            <button
-              onClick={() => setIsPitCollapsed(!isPitCollapsed)}
-              className="p-1 text-slate-400 hover:text-white rounded-md transition-colors"
-            >
-              {isPitCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-
-        {!isPitCollapsed && (
-          <div className="mt-3 pt-3 border-t border-slate-800/80 space-y-2">
-            {pitRecords.length === 0 ? (
-              <div className="flex items-center justify-between text-xs text-slate-400 py-1 font-mono">
-                <span>Inbound broker listening for plugin telemetry...</span>
-                <span className="text-[10px] text-slate-500">2500ms Debounce</span>
-              </div>
-            ) : (
-              pitRecords.slice(0, 3).map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800/60 text-xs font-mono"
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    <span
-                      className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded ${
-                        item.status === 'staged'
-                          ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                          : item.status === 'synced'
-                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                          : 'bg-rose-950 text-rose-300 border border-rose-800'
-                      }`}
-                    >
-                      {item.status}
-                    </span>
-                    <span className="text-white font-semibold">{item.source_plugin_id}</span>
-                    <span className="text-slate-400 truncate">
-                      {JSON.stringify(item.payload)}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-indigo-300 bg-indigo-950/80 px-2 py-0.5 rounded shrink-0 border border-indigo-800/50">
-                    Pri {item.priority} / Sev {item.severity}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* 3. Quick Actions Bar */}
-      <section className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-        <button
-          onClick={onOpenStartActivity}
-          className="p-3 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 text-left transition-all group flex flex-col justify-between h-20"
-        >
-          <Timer className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition-transform" />
-          <div>
-            <span className="text-xs font-semibold text-white block">Start Timer</span>
-            <span className="text-[10px] text-slate-400">Track focus</span>
-          </div>
-        </button>
-
+      {/* Low-friction capture stays close to the daily plan. */}
+      <section className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <button
           onClick={onOpenQuickCapture}
           className="p-3 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 text-left transition-all group flex flex-col justify-between h-20"
@@ -483,7 +475,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
 
         <button
           onClick={onOpenStudy}
-          className="p-3 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 text-left transition-all group flex flex-col justify-between h-20 col-span-2 sm:col-span-1"
+          className="p-3 rounded-xl bg-slate-900 hover:bg-slate-800/80 border border-slate-800 text-left transition-all group flex flex-col justify-between h-20"
         >
           <Brain className="w-4 h-4 text-purple-400 group-hover:scale-110 transition-transform" />
           <div>
@@ -493,12 +485,12 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </button>
       </section>
 
-      {/* 3. Priority Pins Section */}
+      {/* Today's commitments, not an unbounded task dump. */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Pin className="w-4 h-4 text-amber-400 fill-current" />
-            <h3 className="font-heading font-bold text-base text-white">Today's Priority Pins</h3>
+            <h3 className="font-heading font-bold text-base text-white">Today&rsquo;s commitments</h3>
           </div>
           <span className="text-xs font-mono text-slate-400">{priorities.length} / 3 pinned</span>
         </div>
@@ -592,7 +584,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         )}
       </section>
 
-      {/* 4. Today's Timeline Logs & Tasks Grid */}
+      {/* A compact record makes the end-of-day review feel achievable. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Today's Timeline Logs */}
         <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
@@ -600,7 +592,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <History className="w-4 h-4 text-emerald-400" />
-                <h3 className="font-heading font-bold text-base text-white">Today's Timeline Logs</h3>
+                <h3 className="font-heading font-bold text-base text-white">Close the loop</h3>
               </div>
               <span className="text-xs font-mono text-slate-400">{timelineEntries.length} entries</span>
             </div>
@@ -630,13 +622,13 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
           </div>
         </section>
 
-        {/* Pending Tasks */}
+        {/* Progress summary */}
         <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-indigo-400" />
-              <h3 className="font-heading font-bold text-base text-white">Pending Tasks</h3>
-            </div>
+                <ListChecks className="w-4 h-4 text-indigo-400" />
+                <h3 className="font-heading font-bold text-base text-white">Today at a glance</h3>
+              </div>
             <button
               onClick={onOpenAddTask}
               className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1"
@@ -645,49 +637,25 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             </button>
           </div>
 
-          <div className="space-y-2">
-            {todayTasks.filter((t) => t.status !== 'COMPLETED').length === 0 ? (
-              <p className="text-xs text-slate-500 italic py-6 text-center">All tasks completed for today!</p>
-            ) : (
-              todayTasks
-                .filter((t) => t.status !== 'COMPLETED')
-                .slice(0, 5)
-                .map((task) => {
-                  const isTaskActive = activeActivity && activeActivity.activityName.toLowerCase().includes(task.title.toLowerCase());
-                  return (
-                    <div
-                      key={task.id}
-                      className={`p-3 rounded-xl border flex items-center justify-between gap-2 transition-all ${
-                        isTaskActive
-                          ? 'bg-indigo-950/40 border-indigo-500/50'
-                          : 'bg-slate-950 border-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <button
-                          onClick={() => onToggleTaskStatus(task.id)}
-                          className="text-slate-500 hover:text-emerald-400 transition-colors"
-                        >
-                          <Circle className="w-4 h-4" />
-                        </button>
-                        <span className="text-xs font-medium text-white truncate">{task.title}</span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={() => handleStartTask(task)}
-                          className="p-1 rounded-md text-slate-400 hover:text-indigo-300 hover:bg-slate-800 transition-colors"
-                          title="Start timer for this task"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                        </button>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
-                          {task.category}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-            )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+              <p className="text-2xl font-bold text-white">{focusMinutes}m</p>
+              <p className="mt-1 text-[11px] text-slate-400">intentional focus</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+              <p className="text-2xl font-bold text-white">{completedToday}/{todayTasks.length}</p>
+              <p className="mt-1 text-[11px] text-slate-400">tasks complete</p>
+            </div>
+          </div>
+          <div className="mt-4 rounded-xl border border-indigo-900/60 bg-indigo-950/30 p-3.5">
+            <p className="text-xs font-medium text-indigo-100">
+              {openTasks.length === 0
+                ? 'Your commitments are complete. Take a moment to note what made today work.'
+                : `Keep the list small: ${openTasks.length} task${openTasks.length === 1 ? '' : 's'} remain. Choose the next one when you are ready.`}
+            </p>
+            <button onClick={onOpenJournal} className="mt-2 text-xs font-semibold text-indigo-300 hover:text-indigo-200">
+              Write a short reflection →
+            </button>
           </div>
         </section>
       </div>

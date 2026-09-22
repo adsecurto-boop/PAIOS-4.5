@@ -120,7 +120,7 @@ export function signInWithGoogleOAuthToken(): Promise<PaiosUser> {
 
     const clientId =
       firebaseConfig.oAuthClientId ||
-      '97625194970-bdmi8qk7ppe067gd240ibpu15jhrhcpo.apps.googleusercontent.com';
+      '590149617516-a2sdll7m3nm2nl4oofg3rgt56l1jqohq.apps.googleusercontent.com';
 
     const google = (window as any).google;
 
@@ -233,7 +233,7 @@ export function renderGoogleSignInButton(
 
   const clientId =
     firebaseConfig.oAuthClientId ||
-    '97625194970-bdmi8qk7ppe067gd240ibpu15jhrhcpo.apps.googleusercontent.com';
+    '590149617516-a2sdll7m3nm2nl4oofg3rgt56l1jqohq.apps.googleusercontent.com';
 
   try {
     const google = (window as any).google;

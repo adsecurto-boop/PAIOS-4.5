@@ -1112,6 +1112,8 @@ export const App: React.FC = () => {
                   priorities={tasks.filter((t) => t.isPriorityPin)}
                   todayTasks={tasks}
                   timelineEntries={timelineEntries}
+                  checkIns={checkIns}
+                  reviews={reviews}
                   userName={settings.userName}
                   onStartActivity={handleStartActivity}
                   onPauseActivity={handlePauseActivity}
@@ -1123,6 +1125,8 @@ export const App: React.FC = () => {
                   onOpenAddTask={() => setShowTaskModal(true)}
                   onOpenJournal={() => setActiveTab(NavTab.JOURNAL)}
                   onOpenStudy={() => setActiveTab(NavTab.LEARN)}
+                  onOpenCheckIn={() => setShowCheckInModal(true)}
+                  onOpenReview={() => setShowReviewModal(true)}
                 />
               )}
 

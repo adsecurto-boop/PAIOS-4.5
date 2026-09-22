@@ -10,6 +10,14 @@ android {
     compileSdk 34
 
     signingConfigs {
+        debug {
+            // Make the debug signing location explicit so local and CI debug builds
+            // consistently use the standard Android debug credential.
+            storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
         release {
             if (System.getenv("RELEASE_KEYSTORE_FILE") != null) {
                 storeFile file(System.getenv("RELEASE_KEYSTORE_FILE"))

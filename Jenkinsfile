@@ -250,6 +250,25 @@ pipeline {
 
                         // 4. Compile Android APKs via Gradle (assembleDebug & assembleRelease)
                         dir('android') {
+                            powershell '''
+                            # Fresh Windows agents do not always have the standard debug
+                            # keystore. Create it only when a production keystore was not
+                            # supplied, matching the project's documented test-release fallback.
+                            if (-not $env:RELEASE_KEYSTORE_FILE) {
+                                $debugDir = Join-Path $env:USERPROFILE '.android'
+                                $debugKeystore = Join-Path $debugDir 'debug.keystore'
+                                if (!(Test-Path $debugKeystore)) {
+                                    New-Item -ItemType Directory -Path $debugDir -Force | Out-Null
+                                    $keytool = Join-Path $env:JAVA_HOME 'bin\\keytool.exe'
+                                    if (!(Test-Path $keytool)) { $keytool = 'keytool' }
+                                    & $keytool -genkeypair -keystore $debugKeystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US' -noprompt
+                                    if ($LASTEXITCODE -ne 0) { throw 'Unable to create Android debug signing keystore.' }
+                                }
+                                Write-Output "[INFO] Using local debug signing fallback at $debugKeystore"
+                            } else {
+                                Write-Output '[INFO] Using configured production Android release keystore.'
+                            }
+                            '''
                             bat '''
                             @echo off
                             echo [STATUS] Compiling Android APKs (assembleDebug assembleRelease)...
@@ -304,6 +323,62 @@ Platform: Windows x64 Desktop
                         '''
                     }
                 }
+            }
+        }
+
+        stage('Finalize Release Manifest') {
+            steps {
+                echo "=== Generating checksummed release manifest ==="
+                powershell '''
+                $ErrorActionPreference = 'Stop'
+                $version = (Get-Content 'package.json' -Raw | ConvertFrom-Json).version
+                $apkPath = Join-Path $pwd 'android/app/build/outputs/apk/release/app-release.apk'
+                $desktopZip = Join-Path $pwd 'dist-electron/PAIOS-Desktop-Windows-x64.zip'
+                $webZip = Join-Path $pwd 'dist/PAIOS-Web-Dist.zip'
+
+                foreach ($artifact in @($apkPath, $desktopZip)) {
+                    if (!(Test-Path $artifact)) { throw "Required release artifact is missing: $artifact" }
+                }
+
+                $apkHash = (Get-FileHash $apkPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                $desktopHash = (Get-FileHash $desktopZip -Algorithm SHA256).Hash.ToLowerInvariant()
+                $buildTimestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+                $commit = if ($env:GIT_COMMIT) { $env:GIT_COMMIT } else { (git rev-parse HEAD).Trim() }
+                $artifactBase = 'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact'
+
+                $manifest = @{
+                    version = $version
+                    buildNumber = "$($env:BUILD_NUMBER)"
+                    buildTimestamp = $buildTimestamp
+                    gitCommit = $commit
+                    releaseDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss UTC')
+                    releaseNotes = "PAIOS Multi-Platform Build #$($env:BUILD_NUMBER) (Commit $commit)"
+                    mandatory = $false
+                    platforms = @{
+                        windows = @{
+                            url = "$artifactBase/dist-electron/PAIOS-Desktop-Windows-x64.zip"
+                            webDistUrl = "$artifactBase/dist/PAIOS-Web-Dist.zip"
+                            filename = 'PAIOS-Desktop-Windows-x64.zip'
+                            version = $version
+                            sha256 = $desktopHash
+                        }
+                        android = @{
+                            url = "$artifactBase/android/app/build/outputs/apk/release/app-release.apk"
+                            debugUrl = "$artifactBase/android/app/build/outputs/apk/debug/app-debug.apk"
+                            filename = 'app-release.apk'
+                            version = $version
+                            sha256 = $apkHash
+                        }
+                    }
+                } | ConvertTo-Json -Depth 5
+
+                Set-Content -Path 'dist/version.json' -Value $manifest -Encoding utf8
+                Set-Content -Path 'version.json' -Value $manifest -Encoding utf8
+                if (Test-Path $webZip) { Remove-Item -Force $webZip }
+                $webFiles = Get-ChildItem -Path 'dist' -Force | Where-Object { $_.Name -ne 'PAIOS-Web-Dist.zip' }
+                Compress-Archive -Path $webFiles.FullName -DestinationPath $webZip -Force
+                Write-Output "[SUCCESS] Release manifest generated for v$version with SHA-256 verification."
+                '''
             }
         }
 
