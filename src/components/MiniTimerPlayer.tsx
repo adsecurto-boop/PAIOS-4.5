@@ -29,12 +29,23 @@ export const MiniTimerPlayer: React.FC<MiniTimerPlayerProps> = ({
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onTap();
+    }
+  };
+
   return (
     <div className="bg-indigo-950/90 border-t border-indigo-800/80 backdrop-blur-md px-4 py-2.5 text-slate-100 shadow-lg">
       <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
         <div
+          role="button"
+          tabIndex={0}
           onClick={onTap}
-          className="flex items-center gap-3 cursor-pointer flex-1 min-w-0 hover:opacity-90 transition-opacity"
+          onKeyDown={handleKeyDown}
+          aria-label={`View timer details for ${activity.activityName}`}
+          className="flex items-center gap-3 cursor-pointer flex-1 min-w-0 hover:opacity-90 transition-opacity rounded-lg p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-950"
         >
           <div className="relative">
             <div className={`w-3 h-3 rounded-full ${activity.isPaused ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
@@ -61,8 +72,9 @@ export const MiniTimerPlayer: React.FC<MiniTimerPlayerProps> = ({
                 e.stopPropagation();
                 onResume(activity.id);
               }}
-              className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+              className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
               title="Resume Activity"
+              aria-label="Resume Activity"
             >
               <Play className="w-4 h-4" />
             </button>
@@ -72,8 +84,9 @@ export const MiniTimerPlayer: React.FC<MiniTimerPlayerProps> = ({
                 e.stopPropagation();
                 onPause(activity.id);
               }}
-              className="p-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-colors"
+              className="p-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
               title="Pause Activity"
+              aria-label="Pause Activity"
             >
               <Pause className="w-4 h-4" />
             </button>
@@ -84,8 +97,9 @@ export const MiniTimerPlayer: React.FC<MiniTimerPlayerProps> = ({
               e.stopPropagation();
               onFinish(activity.id);
             }}
-            className="p-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-colors flex items-center gap-1 text-xs font-medium px-2.5"
+            className="p-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-colors flex items-center gap-1 text-xs font-medium px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             title="Finish Activity"
+            aria-label="Finish Activity"
           >
             <Square className="w-3.5 h-3.5 fill-current" />
             <span>Finish</span>
