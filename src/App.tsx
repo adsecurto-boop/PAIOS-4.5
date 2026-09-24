@@ -56,6 +56,7 @@ import { WindowsTitleBar } from './components/WindowsTitleBar';
 import { WindowsTaskBar } from './components/WindowsTaskBar';
 import { DesktopAppExportModal } from './components/DesktopAppExportModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { QuickAddMenu } from './components/QuickAddMenu';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>(NavTab.AI);
@@ -116,6 +117,7 @@ export const App: React.FC = () => {
   const [showStartActivityModal, setShowStartActivityModal] = useState(false);
   const [showFinishActivityModal, setShowFinishActivityModal] = useState(false);
   const [showQuickCaptureModal, setShowQuickCaptureModal] = useState(false);
+  const [showQuickAddMenu, setShowQuickAddMenu] = useState(false);
   const [showCheckInModal, setShowCheckInModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -1110,6 +1112,7 @@ export const App: React.FC = () => {
               onSyncComplete={reloadState}
               onOpenNotifications={() => setShowNotificationModal(true)}
               onOpenTour={() => setShowSetupWizardModal(true)}
+              onOpenQuickAdd={() => setShowQuickAddMenu(true)}
               onOpenSearch={() => {
                 handleSearch('');
                 setShowSearchModal(true);
@@ -1281,10 +1284,10 @@ export const App: React.FC = () => {
 
       {/* Mobile Android Floating Action Button (FAB) for Quick Capture */}
       <button
-        onClick={() => setShowQuickCaptureModal(true)}
+        onClick={() => setShowQuickAddMenu(true)}
         className="fixed bottom-[70px] right-4 z-40 md:hidden w-13 h-13 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white shadow-xl shadow-indigo-600/40 border border-indigo-400/30 flex items-center justify-center active:scale-90 transition-transform"
         aria-label="Quick Capture Task or Note"
-        title="Quick Capture"
+        title="Add to PAIOS"
       >
         <Plus className="w-6 h-6" />
       </button>
@@ -1320,6 +1323,16 @@ export const App: React.FC = () => {
       />
 
       {/* Modals */}
+      {showQuickAddMenu && (
+        <QuickAddMenu
+          onDismiss={() => setShowQuickAddMenu(false)}
+          onAddTask={() => setShowTaskModal(true)}
+          onAddNote={() => setShowQuickCaptureModal(true)}
+          onStartFocus={() => setShowStartActivityModal(true)}
+          onOpenJournal={() => setActiveTab(NavTab.JOURNAL)}
+        />
+      )}
+
       {showAuthModal && (
         <AuthModal
           isOpen={showAuthModal}

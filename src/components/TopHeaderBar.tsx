@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Sun, Moon, Settings, Cpu, LogOut, Bell, Compass, RefreshCw } from 'lucide-react';
+import { Search, Sun, Moon, Settings, Cpu, LogOut, Bell, Compass, RefreshCw, Plus } from 'lucide-react';
 import { CloudSyncBanner } from './CloudSyncBanner';
 import { AutoUpdateSyncBanner } from './AutoUpdateSyncBanner';
 import { PaiosUser } from '../firebase';
@@ -18,6 +18,7 @@ interface TopHeaderBarProps {
   onOpenNotifications?: () => void;
   onSyncComplete?: () => void;
   onOpenTour?: () => void;
+  onOpenQuickAdd?: () => void;
 }
 
 export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
@@ -30,6 +31,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
   onOpenNotifications,
   onSyncComplete,
   onOpenTour,
+  onOpenQuickAdd,
 }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isForceSyncing, setIsForceSyncing] = useState(false);
@@ -72,6 +74,11 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
 
         {/* Streamlined Interactive Tools Header Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
+          {onOpenQuickAdd && (
+            <button onClick={onOpenQuickAdd} className="hidden sm:flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500" aria-label="Quick add" title="Add task, note, focus session, or journal entry">
+              <Plus className="h-4 w-4" /><span>Add</span>
+            </button>
+          )}
           <div className="hidden lg:block shrink-0">
             <SyncStatusIndicator userId={user?.uid} />
           </div>

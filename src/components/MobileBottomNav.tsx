@@ -1,19 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import {
-  Sun,
-  Clock,
-  CheckSquare,
-  HeartPulse,
-  BookOpen,
-  BarChart2,
-  Bot,
-  Book,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  Layers,
-  Sparkles,
-} from 'lucide-react';
+import React, { useState } from 'react';
+import { BarChart2, Book, BookOpen, CheckSquare, Clock, HeartPulse, Layers, MoreHorizontal, Settings, Sparkles, Sun } from 'lucide-react';
 import { NavTab } from '../types';
 
 interface MobileBottomNavProps {
@@ -21,101 +7,66 @@ interface MobileBottomNavProps {
   onSelectTab: (tab: NavTab) => void;
 }
 
-export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
-  activeTab,
-  onSelectTab,
-}) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const activeItemRef = useRef<HTMLButtonElement>(null);
+const primaryTabs = [
+  { id: NavTab.TODAY, label: 'Today', icon: Sun },
+  { id: NavTab.TIMELINE, label: 'Plan', icon: Clock },
+  { id: NavTab.TASKS, label: 'Tasks', icon: CheckSquare },
+  { id: NavTab.AI, label: 'Assistant', icon: Sparkles },
+];
 
-  const tabs = [
-    { id: NavTab.AI, label: 'AI Home', icon: Sparkles },
-    { id: NavTab.TODAY, label: 'Today', icon: Sun },
-    { id: NavTab.TIMELINE, label: 'Timeline', icon: Clock },
-    { id: NavTab.TASKS, label: 'Tasks', icon: CheckSquare },
-    { id: NavTab.PLUGINS, label: 'Plugins', icon: Layers },
-    { id: NavTab.HEALTH, label: 'Health', icon: HeartPulse },
-    { id: NavTab.LEARN, label: 'Learn', icon: BookOpen },
-    { id: NavTab.INSIGHTS, label: 'Insights', icon: BarChart2 },
-    { id: NavTab.JOURNAL, label: 'Journal', icon: Book },
-    { id: NavTab.SETTINGS, label: 'Settings', icon: Settings },
-  ];
+const secondaryTabs = [
+  { id: NavTab.HEALTH, label: 'Health', description: 'Medication and wellbeing', icon: HeartPulse },
+  { id: NavTab.JOURNAL, label: 'Journal', description: 'Notes and reflections', icon: Book },
+  { id: NavTab.LEARN, label: 'Learn', description: 'Study cards and recall', icon: BookOpen },
+  { id: NavTab.INSIGHTS, label: 'Insights', description: 'Progress and patterns', icon: BarChart2 },
+  { id: NavTab.PLUGINS, label: 'Tools', description: 'Money and extensions', icon: Layers },
+  { id: NavTab.SETTINGS, label: 'Settings', description: 'Account and preferences', icon: Settings },
+];
 
-  // Auto-scroll active tab into center view when tab changes
-  useEffect(() => {
-    if (activeItemRef.current) {
-      activeItemRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'center',
-      });
-    }
-  }, [activeTab]);
-
-  const handleScroll = (direction: 'left' | 'right') => {
-    if (scrollRef.current) {
-      const scrollAmount = direction === 'left' ? -180 : 180;
-      scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-    }
+export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ activeTab, onSelectTab }) => {
+  const [showMore, setShowMore] = useState(false);
+  const isSecondaryActive = secondaryTabs.some((tab) => tab.id === activeTab);
+  const select = (tab: NavTab) => {
+    setShowMore(false);
+    onSelectTab(tab);
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-slate-950/95 backdrop-blur-2xl border-t border-slate-800/80 shadow-2xl pb-[env(safe-area-inset-bottom,8px)] w-full max-w-full">
-      <div className="relative flex items-center w-full">
-        {/* Left Scroll Cue / Button */}
-        <button
-          onClick={() => handleScroll('left')}
-          className="absolute left-0 z-10 h-full px-1 flex items-center justify-center bg-gradient-to-r from-slate-950 via-slate-950/90 to-transparent text-slate-400 hover:text-white"
-          aria-label="Scroll Left"
-        >
-          <ChevronLeft className="w-4 h-4 opacity-75" />
-        </button>
-
-        {/* Scrollable Navigation Container */}
-        <div
-          ref={scrollRef}
-          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar px-6 py-1.5 scroll-smooth snap-x touch-pan-x w-full overscroll-x-contain"
-        >
-          {tabs.map((tab) => {
+    <>
+      {showMore && <div className="fixed inset-0 z-40 bg-slate-950/60 md:hidden" onClick={() => setShowMore(false)} aria-hidden="true" />}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 w-full border-t border-slate-800/80 bg-slate-950/95 pb-[env(safe-area-inset-bottom,8px)] shadow-2xl backdrop-blur-2xl md:hidden" aria-label="Primary navigation">
+        {showMore && (
+          <div className="absolute bottom-full left-3 right-3 mb-2 rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-2xl">
+            <div className="mb-2 px-1"><p className="text-xs font-bold text-white">More from PAIOS</p><p className="text-[10px] text-slate-400">Open supporting areas when you need them.</p></div>
+            <div className="grid grid-cols-2 gap-2">
+              {secondaryTabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button key={tab.id} type="button" onClick={() => select(tab.id)} className={`flex items-center gap-2.5 rounded-xl border p-3 text-left ${isActive ? 'border-indigo-500/60 bg-indigo-950/50' : 'border-slate-800 bg-slate-950/70 hover:border-slate-700'}`}>
+                    <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-indigo-300' : 'text-slate-400'}`} />
+                    <span className="min-w-0"><span className="block text-xs font-semibold text-white">{tab.label}</span><span className="block truncate text-[9px] text-slate-500">{tab.description}</span></span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-5 px-1.5 py-1.5">
+          {primaryTabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
-              <button
-                key={tab.id}
-                ref={isActive ? activeItemRef : null}
-                onClick={() => onSelectTab(tab.id)}
-                className={`flex flex-col items-center justify-center min-w-[62px] py-1 px-1.5 rounded-2xl text-[10px] font-medium transition-all duration-200 snap-center shrink-0 min-h-[48px] active:scale-95 ${
-                  isActive
-                    ? 'text-indigo-200 font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <div
-                  className={`flex items-center justify-center w-11 h-6 rounded-full transition-all duration-200 ${
-                    isActive
-                      ? 'bg-indigo-600/40 text-indigo-300 border border-indigo-500/50 shadow-md shadow-indigo-900/40 scale-105'
-                      : 'bg-transparent text-slate-400'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-indigo-300' : 'text-slate-400'}`} />
-                </div>
-                <span className={`mt-0.5 truncate w-full text-center tracking-tight text-[9.5px] ${isActive ? 'text-indigo-200 font-extrabold' : 'text-slate-400'}`}>
-                  {tab.label}
-                </span>
+              <button key={tab.id} type="button" onClick={() => select(tab.id)} className={`flex min-h-[48px] flex-col items-center justify-center rounded-xl text-[9.5px] font-medium ${isActive ? 'text-indigo-200' : 'text-slate-400'}`} aria-current={isActive ? 'page' : undefined}>
+                <span className={`flex h-6 w-11 items-center justify-center rounded-full ${isActive ? 'border border-indigo-500/50 bg-indigo-600/40' : ''}`}><Icon className="h-4 w-4" /></span><span className="mt-0.5">{tab.label}</span>
               </button>
             );
           })}
+          <button type="button" onClick={() => setShowMore((value) => !value)} className={`flex min-h-[48px] flex-col items-center justify-center rounded-xl text-[9.5px] font-medium ${showMore || isSecondaryActive ? 'text-indigo-200' : 'text-slate-400'}`} aria-expanded={showMore}>
+            <span className={`flex h-6 w-11 items-center justify-center rounded-full ${showMore || isSecondaryActive ? 'border border-indigo-500/50 bg-indigo-600/40' : ''}`}><MoreHorizontal className="h-4 w-4" /></span><span className="mt-0.5">More</span>
+          </button>
         </div>
-
-        {/* Right Scroll Cue / Button */}
-        <button
-          onClick={() => handleScroll('right')}
-          className="absolute right-0 z-10 h-full px-1 flex items-center justify-center bg-gradient-to-l from-slate-950 via-slate-950/90 to-transparent text-slate-400 hover:text-white"
-          aria-label="Scroll Right"
-        >
-          <ChevronRight className="w-4 h-4 opacity-75" />
-        </button>
-      </div>
-    </nav>
+      </nav>
+    </>
   );
 };
