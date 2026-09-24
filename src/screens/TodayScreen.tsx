@@ -23,10 +23,14 @@ import {
   ListChecks,
   Sun,
   Moon,
-  Flame
+  Flame,
+  RefreshCw,
+  CalendarClock,
+  AlertTriangle,
 } from 'lucide-react';
-import { ActivityLog, Task, TimelineEntry, MorningCheckIn, EveningReview } from '../types';
+import { ActivityLog, Task, TimelineEntry, MorningCheckIn, EveningReview, AdaptiveTimetableBlock, AdaptiveTimetableResponse } from '../types';
 import { TimetablePlugin, TimetableProposal } from '../core/plugins/TimetablePlugin';
+import { getDailyCommandState } from '../utils/dailyCommandCenter';
 
 interface TodayScreenProps {
   activeActivity: ActivityLog | null;
@@ -35,6 +39,8 @@ interface TodayScreenProps {
   timelineEntries: TimelineEntry[];
   checkIns: MorningCheckIn[];
   reviews: EveningReview[];
+  timetable: AdaptiveTimetableResponse | null;
+  isGeneratingTimetable: boolean;
   userName: string;
   onStartActivity: (name: string, category: string, note?: string) => void;
   onStartTaskTimer?: (task: Task) => void;
@@ -50,6 +56,11 @@ interface TodayScreenProps {
   onOpenStudy: () => void;
   onOpenCheckIn: () => void;
   onOpenReview: () => void;
+  onGeneratePlan: () => void;
+  onReplanDay: () => void;
+  onStartPlannedBlock: (block: AdaptiveTimetableBlock) => void;
+  onOpenPlan: () => void;
+  onRolloverTasks: (taskIds: number[]) => void;
 }
 
 export const TodayScreen: React.FC<TodayScreenProps> = ({
@@ -59,6 +70,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   timelineEntries,
   checkIns,
   reviews,
+  timetable,
+  isGeneratingTimetable,
   userName,
   onStartActivity,
   onStartTaskTimer,
@@ -74,6 +87,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   onOpenStudy,
   onOpenCheckIn,
   onOpenReview,
+  onGeneratePlan,
+  onReplanDay,
+  onStartPlannedBlock,
+  onOpenPlan,
+  onRolloverTasks,
 }) => {
   const [liveSeconds, setLiveSeconds] = useState(0);
   const [activeProposal, setActiveProposal] = useState<TimetableProposal | null>(() =>
@@ -205,6 +223,15 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     { label: 'Reflect', done: Boolean(todayReview), action: onOpenReview },
   ];
   const nextRhythmStep = rhythmSteps.find((step) => !step.done);
+  const commandState = getDailyCommandState(timetable, todayTasks, now);
+
+  const handleRollover = () => {
+    if (!commandState.rolloverTasks.length) return;
+    const confirmed = window.confirm(
+      `Move ${commandState.rolloverTasks.length} unfinished commitment${commandState.rolloverTasks.length === 1 ? '' : 's'} to tomorrow? Completed work will stay untouched.`
+    );
+    if (confirmed) onRolloverTasks(commandState.rolloverTasks.map((task) => task.id));
+  };
 
   return (
     <div className="space-y-5 pb-12">
@@ -218,6 +245,43 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
           <CalendarCheck className="h-4 w-4 text-emerald-400" />
           <span>{completedToday} completed · {openTasks.length} still open</span>
         </div>
+      </section>
+
+      <section className={`rounded-2xl border p-4 shadow-xl ${commandState.isDrifting ? 'border-amber-700/60 bg-amber-950/20' : 'border-indigo-800/60 bg-gradient-to-br from-indigo-950/45 to-slate-900'}`}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              {commandState.isDrifting ? <AlertTriangle className="h-4 w-4 text-amber-400" /> : <CalendarClock className="h-4 w-4 text-indigo-300" />}
+              <h2 className="font-heading text-sm font-bold text-white">Daily command</h2>
+              {commandState.hasTodayPlan && (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${commandState.isDrifting ? 'bg-amber-900/60 text-amber-200' : 'bg-emerald-950 text-emerald-300'}`}>
+                  {commandState.isDrifting ? `${commandState.missedBlocks.length} missed` : 'On track'}
+                </span>
+              )}
+            </div>
+            {!commandState.hasTodayPlan ? (
+              <><p className="mt-2 text-sm font-semibold text-white">Turn today’s commitments into a realistic plan.</p><p className="mt-1 text-xs text-slate-400">PAIOS will propose focused blocks, breaks, and buffers. You remain in control.</p></>
+            ) : commandState.isDrifting ? (
+              <><p className="mt-2 text-sm font-semibold text-amber-100">The plan has drifted. That’s information, not failure.</p><p className="mt-1 text-xs text-slate-400">Rebuild the remaining hours while preserving everything already completed.</p></>
+            ) : commandState.nextBlock ? (
+              <><p className="mt-2 truncate text-sm font-semibold text-white">Next: {commandState.nextBlock.activity}</p><p className="mt-1 text-xs text-slate-400">{commandState.nextBlock.start}–{commandState.nextBlock.end} · {commandState.nextBlock.duration_minutes} min · {commandState.nextBlock.reason || 'Planned around your priorities'}</p></>
+            ) : (
+              <><p className="mt-2 text-sm font-semibold text-white">The planned work is closed for today.</p><p className="mt-1 text-xs text-slate-400">Review the day or prepare tomorrow without disturbing completed work.</p></>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {!commandState.hasTodayPlan && <button type="button" onClick={onGeneratePlan} disabled={isGeneratingTimetable} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"><Sparkles className="mr-1.5 inline h-3.5 w-3.5" />{isGeneratingTimetable ? 'Planning…' : 'Plan my day'}</button>}
+            {commandState.isDrifting && <button type="button" onClick={onReplanDay} disabled={isGeneratingTimetable} className="rounded-xl bg-amber-500 px-4 py-2.5 text-xs font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-50"><RefreshCw className={`mr-1.5 inline h-3.5 w-3.5 ${isGeneratingTimetable ? 'animate-spin' : ''}`} />{isGeneratingTimetable ? 'Replanning…' : 'Replan remaining day'}</button>}
+            {commandState.hasTodayPlan && !commandState.isDrifting && commandState.nextBlock && !activeActivity && <button type="button" onClick={() => onStartPlannedBlock(commandState.nextBlock!)} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-500"><Play className="mr-1.5 inline h-3.5 w-3.5 fill-current" />Start next block</button>}
+            {commandState.hasTodayPlan && <button type="button" onClick={onOpenPlan} className="rounded-xl border border-slate-700 px-3 py-2.5 text-xs font-semibold text-slate-300 hover:border-indigo-500 hover:text-white">View plan</button>}
+          </div>
+        </div>
+        {hasEveningWindow && !todayReview && commandState.rolloverTasks.length > 0 && (
+          <div className="mt-3 flex flex-col gap-2 border-t border-slate-800/80 pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-slate-400">Close the loop: {commandState.rolloverTasks.length} unfinished commitment{commandState.rolloverTasks.length === 1 ? '' : 's'} can be carried into tomorrow.</p>
+            <button type="button" onClick={handleRollover} className="self-start rounded-lg border border-indigo-700/60 bg-indigo-950/50 px-3 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-900/60 sm:self-auto">Review & move to tomorrow</button>
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-lg">

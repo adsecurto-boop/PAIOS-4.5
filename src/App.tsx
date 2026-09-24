@@ -53,6 +53,7 @@ import { SyncConflictModal } from './components/SyncConflictModal';
 import { getPendingSyncConflict, PendingSyncConflict } from './firebase';
 import { trackUsageInsight } from './utils/usageInsights';
 import { applyPlatformClass } from './utils/platform';
+import { getTomorrowNoon, preserveCompletedBlocks } from './utils/dailyCommandCenter';
 
 import { WindowsTitleBar } from './components/WindowsTitleBar';
 import { WindowsTaskBar } from './components/WindowsTaskBar';
@@ -571,6 +572,15 @@ export const App: React.FC = () => {
     reloadState();
   };
 
+  const handleRolloverTasks = (taskIds: number[]) => {
+    const tomorrow = getTomorrowNoon();
+    const selectedIds = new Set(taskIds);
+    PAIOSStorage.getTasks()
+      .filter((task) => selectedIds.has(task.id) && task.status !== 'COMPLETED' && task.status !== 'CANCELLED')
+      .forEach((task) => PAIOSStorage.updateTask({ ...task, dueDateMillis: tomorrow }));
+    reloadState();
+  };
+
   // Study Cards
   const handleSaveStudyCard = (topic: string, question: string, answer: string) => {
     PAIOSStorage.addStudyCard(topic, question, answer);
@@ -610,6 +620,9 @@ export const App: React.FC = () => {
     const now = new Date();
     const currentTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const currentDateStr = getTodayDateString();
+    const saveGeneratedTimetable = (generated: AdaptiveTimetableResponse) => {
+      PAIOSStorage.saveAdaptiveTimetable(preserveCompletedBlocks(PAIOSStorage.getAdaptiveTimetable(), generated));
+    };
 
     try {
       const res = await fetch('/api/ai/generate-timeline', {
@@ -640,7 +653,7 @@ export const App: React.FC = () => {
             explanation: data.explanation || 'AI generated schedule',
             blocks: data.blocks,
           };
-          PAIOSStorage.saveAdaptiveTimetable(responseObj);
+          saveGeneratedTimetable(responseObj);
           reloadState();
           return;
         }
@@ -668,7 +681,7 @@ export const App: React.FC = () => {
         explanation: fallbackData.explanation,
         blocks: fallbackData.blocks,
       };
-      PAIOSStorage.saveAdaptiveTimetable(responseObj);
+      saveGeneratedTimetable(responseObj);
       reloadState();
     } catch (err: any) {
       console.warn('Timetable server fetch error, falling back to client-side timetable generator:', err);
@@ -693,7 +706,7 @@ export const App: React.FC = () => {
           explanation: fallbackData.explanation,
           blocks: fallbackData.blocks,
         };
-        PAIOSStorage.saveAdaptiveTimetable(responseObj);
+        saveGeneratedTimetable(responseObj);
         reloadState();
       } catch (fallbackErr: any) {
         alert(`Unable to generate timetable: ${fallbackErr?.message || 'Error'}`);
@@ -1180,6 +1193,8 @@ export const App: React.FC = () => {
                   timelineEntries={timelineEntries}
                   checkIns={checkIns}
                   reviews={reviews}
+                  timetable={timetable}
+                  isGeneratingTimetable={isGeneratingTimetable}
                   userName={settings.userName}
                   onStartActivity={handleStartActivity}
                   onPauseActivity={handlePauseActivity}
@@ -1193,6 +1208,14 @@ export const App: React.FC = () => {
                   onOpenStudy={() => setActiveTab(NavTab.LEARN)}
                   onOpenCheckIn={() => setShowCheckInModal(true)}
                   onOpenReview={() => setShowReviewModal(true)}
+                  onGeneratePlan={() => handleGenerateTimetable('Create a calm daily plan around the user’s top outcomes, current energy, fixed commitments, and realistic breaks.')}
+                  onReplanDay={() => handleGenerateTimetable('The current plan has drifted. Preserve completed work and rebuild only the remaining day with realistic buffers.')}
+                  onStartPlannedBlock={(block) => {
+                    PAIOSStorage.updateTimetableBlockStatus(block.id, 'in_progress');
+                    handleStartActivity(block.activity, block.category, block.goal || block.reason);
+                  }}
+                  onOpenPlan={() => setActiveTab(NavTab.TIMELINE)}
+                  onRolloverTasks={handleRolloverTasks}
                 />
               )}
 
