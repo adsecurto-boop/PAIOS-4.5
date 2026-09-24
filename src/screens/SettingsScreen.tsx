@@ -31,6 +31,7 @@ import { SoftwareUpdateCard } from '../components/SoftwareUpdateCard';
 import { exportAndShareBackup } from '../utils/exportShare';
 import { checkOllamaHealth, sendOllamaChat } from '../services/ollamaClient';
 import { getAuthToken } from '../storage';
+import { requestNotificationPermission } from '../utils/notifications';
 
 interface SettingsScreenProps {
   settings: UserSettings;
@@ -86,6 +87,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [eveningTimeVal, setEveningTimeVal] = useState(settings.eveningReviewTime || '21:30');
   const [dailySummaryEnabledVal, setDailySummaryEnabledVal] = useState(settings.dailySummaryEnabled !== false);
   const [dailySummaryTimeVal, setDailySummaryTimeVal] = useState(settings.dailySummaryTime || '21:00');
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(Boolean(settings.notificationQuietHoursEnabled));
+  const [quietHoursStart, setQuietHoursStart] = useState(settings.notificationQuietHoursStart || '22:30');
+  const [quietHoursEnd, setQuietHoursEnd] = useState(settings.notificationQuietHoursEnd || '07:30');
+  const [notificationPermission, setNotificationPermission] = useState<'idle' | 'granted' | 'denied'>('idle');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
 
@@ -224,6 +229,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       eveningReviewTime: eveningTimeVal,
       dailySummaryEnabled: dailySummaryEnabledVal,
       dailySummaryTime: dailySummaryTimeVal,
+      notificationQuietHoursEnabled: quietHoursEnabled,
+      notificationQuietHoursStart: quietHoursStart,
+      notificationQuietHoursEnd: quietHoursEnd,
     });
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
@@ -473,6 +481,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   />
                 </div>
               )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h4 className="text-xs font-semibold text-white">Respect quiet hours</h4>
+                <p className="mt-0.5 text-[11px] text-slate-400">Pauses focus, schedule, and daily-loop reminders. Medication alerts are never muted.</p>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-slate-300">
+                <input type="checkbox" checked={quietHoursEnabled} onChange={(e) => setQuietHoursEnabled(e.target.checked)} className="h-4 w-4 cursor-pointer rounded accent-indigo-500" />
+                Enable
+              </label>
+            </div>
+            {quietHoursEnabled && (
+              <div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-900 pt-3">
+                <label className="text-[11px] text-slate-400">From
+                  <input type="time" value={quietHoursStart} onChange={(e) => setQuietHoursStart(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 font-mono text-xs text-white focus:outline-none focus:border-indigo-500" />
+                </label>
+                <label className="text-[11px] text-slate-400">Until
+                  <input type="time" value={quietHoursEnd} onChange={(e) => setQuietHoursEnd(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 font-mono text-xs text-white focus:outline-none focus:border-indigo-500" />
+                </label>
+              </div>
+            )}
+            <div className="mt-3 flex items-center justify-between border-t border-slate-900 pt-3">
+              <span className="text-[11px] text-slate-400">Allow PAIOS notifications on this device.</span>
+              <button
+                type="button"
+                onClick={async () => setNotificationPermission((await requestNotificationPermission()) ? 'granted' : 'denied')}
+                className="rounded-lg border border-indigo-600/60 bg-indigo-950/50 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-900/60"
+              >
+                {notificationPermission === 'granted' ? 'Notifications enabled' : notificationPermission === 'denied' ? 'Permission unavailable' : 'Enable notifications'}
+              </button>
             </div>
           </div>
         </div>

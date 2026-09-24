@@ -5,6 +5,7 @@ import { AutoUpdateSyncBanner } from './AutoUpdateSyncBanner';
 import { PaiosUser } from '../firebase';
 import { getNotificationsHistory } from '../utils/notifications';
 import { PreContextBroker } from '../core/broker/PreContextBroker';
+import { SyncStatusIndicator } from './SyncStatusIndicator';
 
 interface TopHeaderBarProps {
   userName?: string;
@@ -71,6 +72,9 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
 
         {/* Streamlined Interactive Tools Header Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
+          <div className="hidden lg:block shrink-0">
+            <SyncStatusIndicator />
+          </div>
           <CloudSyncBanner compact onSyncComplete={onSyncComplete} />
           <AutoUpdateSyncBanner compact />
 

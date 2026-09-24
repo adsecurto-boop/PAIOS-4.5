@@ -247,6 +247,9 @@ export interface UserSettings {
   dailySummaryTime?: string; // e.g. "21:00"
   morningCheckInTime?: string; // e.g. "08:00"
   eveningReviewTime?: string; // e.g. "21:30"
+  notificationQuietHoursEnabled?: boolean;
+  notificationQuietHoursStart?: string; // e.g. "22:30"
+  notificationQuietHoursEnd?: string; // e.g. "07:30"
   preferredModel?: string;
   officeStartTime?: string; // e.g. "13:00"
   officeEndTime?: string;   // e.g. "22:00"

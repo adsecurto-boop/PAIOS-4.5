@@ -195,6 +195,15 @@ export const App: React.FC = () => {
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const dateStr = getTodayDateString();
+      const quietHoursStart = settings.notificationQuietHoursStart || '22:30';
+      const quietHoursEnd = settings.notificationQuietHoursEnd || '07:30';
+      const isWithinQuietHours = () => {
+        if (!settings.notificationQuietHoursEnabled || quietHoursStart === quietHoursEnd) return false;
+        return quietHoursStart < quietHoursEnd
+          ? timeStr >= quietHoursStart && timeStr < quietHoursEnd
+          : timeStr >= quietHoursStart || timeStr < quietHoursEnd;
+      };
+      const silenceNonMedicalReminders = isWithinQuietHours();
 
       // 1. Medication Schedule Check
       medications.forEach((med) => {
@@ -212,7 +221,7 @@ export const App: React.FC = () => {
       });
 
       // 2. Scheduled AI Timetable Blocks & Timeline Reminders
-      if (timetable && timetable.blocks) {
+      if (!silenceNonMedicalReminders && timetable && timetable.blocks) {
         timetable.blocks.forEach((block) => {
           if (block.start === timeStr && block.status !== 'completed') {
             const key = `block_${block.id}_${dateStr}_${timeStr}`;
@@ -230,7 +239,7 @@ export const App: React.FC = () => {
 
       // 3. Morning Check-In Reminder
       const morningTargetTime = settings.morningCheckInTime || settings.wakeTime || '08:00';
-      if (settings.morningNotificationEnabled !== false && timeStr === morningTargetTime) {
+      if (!silenceNonMedicalReminders && settings.morningNotificationEnabled !== false && timeStr === morningTargetTime) {
         const key = `checkin_morn_${dateStr}_${timeStr}`;
         const hasCheckedIn = checkIns.some((c) => c.dateString === dateStr);
         if (!firedNotifs.has(key) && !hasCheckedIn) {
@@ -245,7 +254,7 @@ export const App: React.FC = () => {
 
       // 4. Evening Review Reminder
       const eveningTargetTime = settings.eveningReviewTime || settings.bedtime || '21:30';
-      if (settings.eveningNotificationEnabled !== false && timeStr === eveningTargetTime) {
+      if (!silenceNonMedicalReminders && settings.eveningNotificationEnabled !== false && timeStr === eveningTargetTime) {
         const key = `review_eve_${dateStr}_${timeStr}`;
         const hasReviewed = reviews.some((r) => r.dateString === dateStr);
         if (!firedNotifs.has(key) && !hasReviewed) {
@@ -260,7 +269,7 @@ export const App: React.FC = () => {
 
       // 5. Daily Insights Top-Performance Summary Notification
       const summaryTime = settings.dailySummaryTime || '21:00';
-      if (settings.dailySummaryEnabled !== false && timeStr === summaryTime) {
+      if (!silenceNonMedicalReminders && settings.dailySummaryEnabled !== false && timeStr === summaryTime) {
         const key = `daily_summary_${dateStr}_${timeStr}`;
         if (!firedNotifs.has(key)) {
           firedNotifs.add(key);
