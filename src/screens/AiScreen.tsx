@@ -269,7 +269,7 @@ export const AiScreen: React.FC<AiScreenProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-130px)] min-h-[640px] max-h-[880px] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="android-ai-screen flex flex-col h-[calc(100dvh-142px-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] min-h-[500px] sm:min-h-[640px] lg:max-h-[880px] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
       {/* 1. TOP HEADER & PERSONA SELECTOR BAR */}
       <div className="px-4 py-3 sm:px-6 sm:py-3.5 border-b border-slate-800 bg-slate-950/80 backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">

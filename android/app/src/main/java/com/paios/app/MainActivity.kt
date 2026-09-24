@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import com.getcapacitor.BridgeActivity
 
 class MainActivity : BridgeActivity() {
@@ -16,6 +17,8 @@ class MainActivity : BridgeActivity() {
         super.onCreate(savedInstanceState)
 
         try {
+            bridge?.webView?.overScrollMode = View.OVER_SCROLL_NEVER
+            bridge?.webView?.isVerticalScrollBarEnabled = false
             bridge?.webView?.settings?.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
@@ -34,6 +37,23 @@ class MainActivity : BridgeActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleAuthIntent(intent)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        val webView = bridge?.webView
+        if (webView == null) {
+            super.onBackPressed()
+            return
+        }
+
+        webView.evaluateJavascript(
+            "Boolean(window.__PAIOS_HANDLE_BACK__ && window.__PAIOS_HANDLE_BACK__())"
+        ) { handled ->
+            if (handled != "true") {
+                runOnUiThread { super.onBackPressed() }
+            }
+        }
     }
 
     private fun handleAuthIntent(intent: Intent?) {

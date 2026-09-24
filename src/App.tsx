@@ -52,6 +52,7 @@ import { OfflineSyncManager } from './core/sync/OfflineSyncManager';
 import { SyncConflictModal } from './components/SyncConflictModal';
 import { getPendingSyncConflict, PendingSyncConflict } from './firebase';
 import { trackUsageInsight } from './utils/usageInsights';
+import { applyPlatformClass } from './utils/platform';
 
 import { WindowsTitleBar } from './components/WindowsTitleBar';
 import { WindowsTaskBar } from './components/WindowsTaskBar';
@@ -129,6 +130,36 @@ export const App: React.FC = () => {
   const [showUpdatePromptModal, setShowUpdatePromptModal] = useState(false);
   const [latestServerManifest, setLatestServerManifest] = useState<VersionManifest | null>(null);
   const [pendingSyncConflict, setPendingSyncConflict] = useState<PendingSyncConflict | null>(null);
+
+  useEffect(() => applyPlatformClass(), []);
+
+  // Called by the Android bridge before the activity exits. Overlays behave like
+  // native sheets: back dismisses the top interaction, then returns to Today.
+  useEffect(() => {
+    const appWindow = window as Window & { __PAIOS_HANDLE_BACK__?: () => boolean };
+    appWindow.__PAIOS_HANDLE_BACK__ = () => {
+      if (showQuickAddMenu) { setShowQuickAddMenu(false); return true; }
+      if (showSearchModal) { setShowSearchModal(false); return true; }
+      if (showNotificationModal) { setShowNotificationModal(false); return true; }
+      if (showTaskModal) { setShowTaskModal(false); return true; }
+      if (showStudyCardModal) { setShowStudyCardModal(false); return true; }
+      if (showQuickCaptureModal) { setShowQuickCaptureModal(false); return true; }
+      if (showStartActivityModal) { setShowStartActivityModal(false); return true; }
+      if (showFinishActivityModal) { setShowFinishActivityModal(false); return true; }
+      if (showCheckInModal) { setShowCheckInModal(false); return true; }
+      if (showReviewModal) { setShowReviewModal(false); return true; }
+      if (showSetupWizardModal) { setShowSetupWizardModal(false); return true; }
+      if (showUpdatePromptModal) { setShowUpdatePromptModal(false); return true; }
+      if (showExportModal) { setShowExportModal(false); return true; }
+      if (showAuthModal) { setShowAuthModal(false); return true; }
+      if (activeTab !== NavTab.TODAY) { setActiveTab(NavTab.TODAY); return true; }
+      return false;
+    };
+    return () => { delete appWindow.__PAIOS_HANDLE_BACK__; };
+  }, [activeTab, showAuthModal, showCheckInModal, showExportModal, showFinishActivityModal,
+    showNotificationModal, showQuickAddMenu, showQuickCaptureModal, showReviewModal,
+    showSearchModal, showSetupWizardModal, showStartActivityModal, showStudyCardModal,
+    showTaskModal, showUpdatePromptModal]);
 
   // Live Timer State for MiniTimerPlayer
   const [elapsedTimerSeconds, setElapsedTimerSeconds] = useState(0);
@@ -1079,7 +1110,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white overflow-x-hidden w-full max-w-full safe-area-left safe-area-right">
+    <div className="android-app-shell min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white overflow-x-hidden w-full max-w-full safe-area-left safe-area-right">
       {/* Windows 11 Desktop Title Bar */}
       <WindowsTitleBar
         isMaximized={isMaximized}
@@ -1140,7 +1171,7 @@ export const App: React.FC = () => {
             />
 
             {/* Main Content Area */}
-            <main className="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-6 pb-28 md:pb-20 overflow-x-hidden">
+            <main className="android-main flex-1 min-h-0 max-w-6xl w-full mx-auto p-3 sm:p-6 pb-28 md:pb-20 overflow-x-hidden">
               {activeTab === NavTab.TODAY && (
                 <TodayScreen
                   activeActivity={activeActivity}
@@ -1288,7 +1319,7 @@ export const App: React.FC = () => {
 
       {/* Persistent Floating Mini Timer Player */}
       {activeActivity && activeTab !== NavTab.TODAY && (
-        <div className="fixed bottom-[56px] md:bottom-12 left-0 right-0 z-40">
+        <div className="fixed bottom-[calc(58px+env(safe-area-inset-bottom,0px))] md:bottom-12 left-0 right-0 z-40">
           <MiniTimerPlayer
             activity={activeActivity}
             elapsedSeconds={elapsedTimerSeconds}
@@ -1303,7 +1334,7 @@ export const App: React.FC = () => {
       {/* Mobile Android Floating Action Button (FAB) for Quick Capture */}
       <button
         onClick={() => setShowQuickAddMenu(true)}
-        className="fixed bottom-[70px] right-4 z-40 md:hidden w-13 h-13 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white shadow-xl shadow-indigo-600/40 border border-indigo-400/30 flex items-center justify-center active:scale-90 transition-transform"
+        className="fixed bottom-[calc(72px+env(safe-area-inset-bottom,0px))] right-4 z-40 md:hidden w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white shadow-xl shadow-indigo-600/40 border border-indigo-400/30 flex items-center justify-center active:scale-90 transition-transform"
         aria-label="Quick Capture Task or Note"
         title="Add to PAIOS"
       >

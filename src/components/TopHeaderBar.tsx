@@ -73,7 +73,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
         </div>
 
         {/* Streamlined Interactive Tools Header Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex min-w-0 items-center justify-end gap-1.5 sm:gap-2">
           {onOpenQuickAdd && (
             <button onClick={onOpenQuickAdd} className="hidden sm:flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500" aria-label="Quick add" title="Add task, note, focus session, or journal entry">
               <Plus className="h-4 w-4" /><span>Add</span>
@@ -82,14 +82,14 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
           <div className="hidden lg:block shrink-0">
             <SyncStatusIndicator userId={user?.uid} />
           </div>
-          <CloudSyncBanner compact onSyncComplete={onSyncComplete} />
-          <AutoUpdateSyncBanner compact />
+          <div className="hidden md:block"><CloudSyncBanner compact onSyncComplete={onSyncComplete} /></div>
+          <div className="hidden lg:block"><AutoUpdateSyncBanner compact /></div>
 
           {/* Rule B2 Force Sync Trigger Button */}
           <button
             onClick={handleForceSync}
             disabled={isForceSyncing}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px] disabled:opacity-50"
+            className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px] disabled:opacity-50"
             title="Force Sync Inbound PreContext Broker Data (Rule B2)"
             aria-label="Force Sync Data"
           >
@@ -100,7 +100,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
           {onOpenTour && (
             <button
               onClick={onOpenTour}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px]"
+              className="hidden xl:flex items-center gap-1 px-2 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px]"
               title="Launch Setup Tour Guide & AI Assistant"
               aria-label="Setup Guide"
             >
@@ -136,7 +136,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
 
           <button
             onClick={onOpenCheckIn}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px]"
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px]"
             title="Morning Check-In"
             aria-label="Morning Check-In"
           >
@@ -146,7 +146,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
 
           <button
             onClick={onOpenReview}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px]"
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition-colors shrink-0 min-h-[38px]"
             title="Evening Review"
             aria-label="Evening Review"
           >
@@ -156,7 +156,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
 
           <button
             onClick={onOpenSettings}
-            className="p-2 rounded-xl bg-slate-800/90 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors border border-slate-700/60 shrink-0 min-h-[38px] min-w-[38px] flex items-center justify-center"
+            className="hidden sm:flex p-2 rounded-xl bg-slate-800/90 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors border border-slate-700/60 shrink-0 min-h-[38px] min-w-[38px] items-center justify-center"
             title="Settings"
             aria-label="Settings"
           >
@@ -166,7 +166,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
           {user && onLogOut && (
             <button
               onClick={onLogOut}
-              className="p-2 rounded-xl bg-slate-800/90 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors border border-slate-700/60 shrink-0 min-h-[38px] min-w-[38px] flex items-center justify-center ml-1"
+              className="hidden sm:flex p-2 rounded-xl bg-slate-800/90 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors border border-slate-700/60 shrink-0 min-h-[38px] min-w-[38px] items-center justify-center ml-1"
               title="Sign Out"
               aria-label="Sign Out"
             >
