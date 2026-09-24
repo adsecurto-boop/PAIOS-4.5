@@ -49,6 +49,8 @@ import { onAuthChange, listenToCloudData, logOut, PaiosUser } from './firebase';
 import { sendClientGeminiChat, sendClientGeminiTimetable } from './geminiClient';
 import { exportAndShareBackup } from './utils/exportShare';
 import { OfflineSyncManager } from './core/sync/OfflineSyncManager';
+import { SyncConflictModal } from './components/SyncConflictModal';
+import { getPendingSyncConflict, PendingSyncConflict } from './firebase';
 
 import { WindowsTitleBar } from './components/WindowsTitleBar';
 import { WindowsTaskBar } from './components/WindowsTaskBar';
@@ -123,6 +125,7 @@ export const App: React.FC = () => {
   const [showSetupWizardModal, setShowSetupWizardModal] = useState(false);
   const [showUpdatePromptModal, setShowUpdatePromptModal] = useState(false);
   const [latestServerManifest, setLatestServerManifest] = useState<VersionManifest | null>(null);
+  const [pendingSyncConflict, setPendingSyncConflict] = useState<PendingSyncConflict | null>(null);
 
   // Live Timer State for MiniTimerPlayer
   const [elapsedTimerSeconds, setElapsedTimerSeconds] = useState(0);
@@ -171,6 +174,8 @@ export const App: React.FC = () => {
       }
     };
     window.addEventListener('paios_navigate', handleNavigate);
+    const handleSyncConflict = () => setPendingSyncConflict(getPendingSyncConflict());
+    window.addEventListener('paios_sync_conflict', handleSyncConflict);
 
     // Bootstrap OfflineSyncManager Reconnection Listeners & Service Worker
     OfflineSyncManager.init();
@@ -183,6 +188,7 @@ export const App: React.FC = () => {
     return () => {
       window.removeEventListener('paios_storage_change', handleStorageChange);
       window.removeEventListener('paios_navigate', handleNavigate);
+      window.removeEventListener('paios_sync_conflict', handleSyncConflict);
       unsubscribeUpdate();
     };
   }, []);
@@ -1319,6 +1325,17 @@ export const App: React.FC = () => {
           isOpen={showAuthModal}
           onClose={() => setShowAuthModal(false)}
           onAuthSuccess={handleAuthSuccess}
+        />
+      )}
+
+      {pendingSyncConflict && currentUser?.uid && (
+        <SyncConflictModal
+          conflict={pendingSyncConflict}
+          userId={currentUser.uid}
+          onResolved={() => {
+            setPendingSyncConflict(null);
+            reloadState();
+          }}
         />
       )}
 

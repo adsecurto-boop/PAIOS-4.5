@@ -73,7 +73,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
         {/* Streamlined Interactive Tools Header Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
           <div className="hidden lg:block shrink-0">
-            <SyncStatusIndicator />
+            <SyncStatusIndicator userId={user?.uid} />
           </div>
           <CloudSyncBanner compact onSyncComplete={onSyncComplete} />
           <AutoUpdateSyncBanner compact />

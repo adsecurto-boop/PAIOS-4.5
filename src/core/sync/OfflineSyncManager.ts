@@ -12,12 +12,27 @@ export interface OfflineMutationItem {
 
 export type OfflineSyncItem = OfflineMutationItem;
 
+export type SyncLifecycleStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'local';
+
+export interface SyncLifecycleDetail {
+  status: SyncLifecycleStatus;
+  queuedChanges: number;
+  lastSyncedAt?: number;
+  message?: string;
+}
+
 export class OfflineSyncManager {
   public static STORAGE_KEY = 'paios_offline_sync_queue';
   private static QUEUE_KEY = 'paios_offline_sync_queue';
   private static isFlushing = false;
   private static remoteLockActive = false;
   private static isInitialized = false;
+
+  private static emitStatus(detail: SyncLifecycleDetail): void {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent<SyncLifecycleDetail>('paios_sync_status', { detail }));
+    }
+  }
 
   /**
    * Initializes application-wide network reconnection listeners.
@@ -95,12 +110,15 @@ export class OfflineSyncManager {
     const token = AuthSyncService.getToken();
     if (!token) {
       // User unauthenticated or guest mode, skip push
+      this.emitStatus({ status: 'local', queuedChanges: this.getQueue().length, message: 'Saved on this device' });
       return { success: true, processed: 0, remaining: this.getQueue().length };
     }
 
     this.isFlushing = true;
     let queue = this.getQueue();
     let processedCount = 0;
+    let failureCount = 0;
+    this.emitStatus({ status: 'syncing', queuedChanges: queue.length });
 
     try {
       const remainingQueue: OfflineMutationItem[] = [];
@@ -114,6 +132,7 @@ export class OfflineSyncManager {
           }
           processedCount++;
         } catch (err) {
+          failureCount++;
           console.warn(`[OfflineSyncManager] Push failed for key ${item.key}:`, err);
           item.retryCount = (item.retryCount || 0) + 1;
           if (item.retryCount < 10) {
@@ -123,6 +142,12 @@ export class OfflineSyncManager {
       }
 
       PAIOSStorage.setItem(this.QUEUE_KEY, remainingQueue);
+      this.emitStatus({
+        status: failureCount > 0 ? 'error' : 'synced',
+        queuedChanges: remainingQueue.length,
+        lastSyncedAt: failureCount === 0 ? Date.now() : undefined,
+        message: failureCount > 0 ? `${failureCount} change${failureCount === 1 ? '' : 's'} could not sync` : undefined,
+      });
       return {
         success: true,
         processed: processedCount,

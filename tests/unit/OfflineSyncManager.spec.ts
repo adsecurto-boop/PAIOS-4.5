@@ -99,6 +99,22 @@ describe('Unit Test: OfflineSyncManager FIFO Buffer & Reconnection', () => {
     expect(queue[0].retryCount).toBe(1);
   });
 
+  it('publishes syncing and synced lifecycle events around a successful flush', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
+    vi.spyOn(AuthSyncService, 'getToken').mockReturnValue('mock_jwt_token');
+    vi.spyOn(AuthSyncService, 'pushData').mockResolvedValue({ success: true });
+    const statuses: string[] = [];
+    const listener = (event: Event) => statuses.push((event as CustomEvent).detail.status);
+    window.addEventListener('paios_sync_status', listener);
+
+    OfflineSyncManager.enqueueMutation('status_key', { value: 1 });
+    await OfflineSyncManager.flushQueue();
+
+    window.removeEventListener('paios_sync_status', listener);
+    expect(statuses).toContain('syncing');
+    expect(statuses.at(-1)).toBe('synced');
+  });
+
   it('binds online event listener on init()', () => {
     const addListenerSpy = vi.spyOn(window, 'addEventListener');
     OfflineSyncManager.init();

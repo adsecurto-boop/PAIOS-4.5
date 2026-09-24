@@ -433,6 +433,23 @@ function getLocalSnapshot(): Record<string, any> {
 let isApplyingRemoteUpdate = false;
 let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let lastLocalSaveTime = 0;
+let hasPendingLocalChanges = false;
+
+export interface PendingSyncConflict {
+  remoteSnapshot: Record<string, unknown>;
+  remoteUpdatedAt: number;
+  detectedAt: number;
+}
+
+let pendingSyncConflict: PendingSyncConflict | null = null;
+
+function emitSyncStatus(status: 'syncing' | 'synced' | 'error', message?: string, lastSyncedAt?: number): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('paios_sync_status', {
+      detail: { status, queuedChanges: 0, message, lastSyncedAt },
+    }));
+  }
+}
 
 // Listen to local changes to push to Firestore
 if (typeof window !== 'undefined') {
@@ -440,6 +457,7 @@ if (typeof window !== 'undefined') {
     if (isApplyingRemoteUpdate) return;
     const currentUser = auth.currentUser;
     if (!currentUser) return;
+    hasPendingLocalChanges = true;
 
     if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
     syncDebounceTimer = setTimeout(() => {
@@ -451,7 +469,13 @@ if (typeof window !== 'undefined') {
 // Push local data snapshot to Firestore
 export async function syncLocalToCloud(userId: string): Promise<void> {
   if (isApplyingRemoteUpdate || !userId) return;
+  if (pendingSyncConflict) {
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('paios_sync_conflict'));
+    emitSyncStatus('error', 'Review changes from another device');
+    return;
+  }
   try {
+    emitSyncStatus('syncing');
     const snapshot = getLocalSnapshot();
     const userDocRef = doc(db, 'user_data', userId);
     lastLocalSaveTime = Date.now();
@@ -460,8 +484,11 @@ export async function syncLocalToCloud(userId: string): Promise<void> {
       updatedAt: lastLocalSaveTime,
       userUid: userId,
     }, { merge: true });
+    hasPendingLocalChanges = false;
+    emitSyncStatus('synced', undefined, Date.now());
   } catch (err: any) {
     console.error('Firestore sync write error:', err);
+    emitSyncStatus('error', err?.message || 'Cloud sync failed');
     if (err.code === 'resource-exhausted') {
       quotaExceededFlag = true;
       if (typeof window !== 'undefined') {
@@ -472,6 +499,36 @@ export async function syncLocalToCloud(userId: string): Promise<void> {
 }
 
 let lastRemoteUpdate = 0;
+
+export function getPendingSyncConflict(): PendingSyncConflict | null {
+  return pendingSyncConflict;
+}
+
+function applyRemoteSnapshot(snapshot: Record<string, unknown>, remoteUpdatedAt: number): void {
+  lastRemoteUpdate = remoteUpdatedAt;
+  isApplyingRemoteUpdate = true;
+  Object.entries(snapshot).forEach(([key, val]) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(val));
+    } catch (e) {}
+  });
+  window.dispatchEvent(new Event('paios_storage_change'));
+  isApplyingRemoteUpdate = false;
+  hasPendingLocalChanges = false;
+  emitSyncStatus('synced', 'Cloud changes applied', Date.now());
+}
+
+export async function resolvePendingSyncConflict(choice: 'local' | 'remote', userId: string): Promise<void> {
+  const conflict = pendingSyncConflict;
+  if (!conflict) return;
+  pendingSyncConflict = null;
+  if (choice === 'remote') {
+    applyRemoteSnapshot(conflict.remoteSnapshot, conflict.remoteUpdatedAt);
+  } else {
+    await syncLocalToCloud(userId);
+  }
+  window.dispatchEvent(new Event('paios_sync_conflict_resolved'));
+}
 
 // Listen to real-time changes from Firestore
 export function listenToCloudData(userId: string, onSyncComplete?: () => void): () => void {
@@ -491,22 +548,18 @@ export function listenToCloudData(userId: string, onSyncComplete?: () => void): 
 
     // Only apply remote update if it's newer than our last remote update and last local save
     if (data?.snapshot && remoteUpdatedAt > lastRemoteUpdate && remoteUpdatedAt > lastLocalSaveTime) {
-      lastRemoteUpdate = remoteUpdatedAt;
-      isApplyingRemoteUpdate = true;
-      Object.entries(data.snapshot).forEach(([key, val]) => {
-        try {
-          localStorage.setItem(key, JSON.stringify(val));
-        } catch (e) {}
-      });
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('paios_storage_change'));
+      if (hasPendingLocalChanges) {
+        pendingSyncConflict = { remoteSnapshot: data.snapshot, remoteUpdatedAt, detectedAt: Date.now() };
+        window.dispatchEvent(new Event('paios_sync_conflict'));
+        emitSyncStatus('error', 'Review changes from another device');
+        return;
       }
-      isApplyingRemoteUpdate = false;
+      applyRemoteSnapshot(data.snapshot, remoteUpdatedAt);
       if (onSyncComplete) onSyncComplete();
     }
   }, (err) => {
     console.warn('Firestore snapshot listener notice:', err);
+    emitSyncStatus('error', err?.message || 'Cloud connection interrupted');
     if (err.code === 'resource-exhausted') {
       quotaExceededFlag = true;
       if (typeof window !== 'undefined') {
