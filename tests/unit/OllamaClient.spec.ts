@@ -173,6 +173,28 @@ describe('Unit Tests: Local Ollama (qwen2.5:7b) AI Provider & Fallback Engine', 
       expect(response.actionPayloadJson).toContain('ISTQB CTFL Practice Exam');
     });
 
+    it('parses a brain dump as one confirmed batch task proposal', async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            model: 'qwen2.5:7b',
+            message: {
+              role: 'assistant',
+              content: 'I grouped the dump into three concrete next actions.\n[[ACTION: {"type":"CREATE_TASKS","tasks":[{"title":"Review requirements","category":"Work","priority":"HIGH"},{"title":"Write regression cases","category":"Testing","priority":"NORMAL"},{"title":"Book focus block","category":"Personal","priority":"NORMAL"}]}]]',
+            },
+            done: true,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+
+      const response = await sendOllamaChat({ promptText: 'Turn my brain dump into tasks' });
+
+      expect(response.actionType).toBe('CREATE_TASKS');
+      expect(JSON.parse(response.actionPayloadJson || '{}').tasks).toHaveLength(3);
+      expect(response.text).not.toContain('[[ACTION:');
+    });
+
     it('parses native Ollama tool calls into PAIOS ledger actions', async () => {
       vi.spyOn(global, 'fetch').mockResolvedValueOnce(
         new Response(

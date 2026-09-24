@@ -190,6 +190,8 @@ CRITICAL TIME-BASED GROUNDING RULES:
 SUPPORTED STRUCTURED ACTION FORMATS (Include at the VERY END of your response if an action is requested):
 [[ACTION: {"type": "ADD_TASK", "title": "Finish API testing", "category": "Testing"}]]
 or
+[[ACTION: {"type": "CREATE_TASKS", "tasks": [{"title": "Review requirements", "category": "Work", "priority": "HIGH", "description": "Clarify the expected outcome"}]}]]
+or
 [[ACTION: {"type": "START_ACTIVITY", "name": "Study ISTQB", "category": "Study"}]]
 or
 [[ACTION: {"type": "SAVE_NOTE", "text": "Investigate API timeout issue"}]]
@@ -286,7 +288,8 @@ ${userContext || 'No context available.'}
 
     if (match) {
       actionPayloadJson = match[1];
-      if (actionPayloadJson.includes('ADD_TASK')) actionType = 'ADD_TASK';
+      if (actionPayloadJson.includes('CREATE_TASKS')) actionType = 'CREATE_TASKS';
+      else if (actionPayloadJson.includes('ADD_TASK')) actionType = 'ADD_TASK';
       else if (actionPayloadJson.includes('START_ACTIVITY')) actionType = 'START_ACTIVITY';
       else if (actionPayloadJson.includes('SAVE_NOTE')) actionType = 'SAVE_NOTE';
       else if (actionPayloadJson.includes('LOG_DOSE') || actionPayloadJson.includes('record_medication_dose')) actionType = 'LOG_DOSE';

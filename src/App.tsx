@@ -925,7 +925,18 @@ export const App: React.FC = () => {
   const handleExecuteAiAction = (actionType: string, actionPayloadJson: string) => {
     try {
       const payload = JSON.parse(actionPayloadJson);
-      if (actionType === 'ADD_TASK' || payload.type === 'ADD_TASK') {
+      if (actionType === 'CREATE_TASKS' || payload.type === 'CREATE_TASKS') {
+        const proposedTasks = Array.isArray(payload.tasks) ? payload.tasks.slice(0, 10) : [];
+        proposedTasks.forEach((task: any) => {
+          if (!task?.title || typeof task.title !== 'string') return;
+          PAIOSStorage.addTask(
+            task.title.trim(),
+            task.category || 'Personal',
+            task.priority === 'HIGH' || task.priority === 'CRITICAL' || Boolean(task.isPriority),
+            task.description || 'Added from an approved PAIOS AI proposal'
+          );
+        });
+      } else if (actionType === 'ADD_TASK' || payload.type === 'ADD_TASK') {
         PAIOSStorage.addTask(payload.title || 'AI Generated Task', payload.category || 'General', true, 'Added via PAIOS AI');
       } else if (actionType === 'START_ACTIVITY' || payload.type === 'START_ACTIVITY') {
         PAIOSStorage.startActivity(payload.name || 'AI Session', payload.category || 'Work', 'Started via PAIOS AI');

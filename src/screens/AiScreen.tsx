@@ -48,6 +48,27 @@ interface AiScreenProps {
 
 const DRAFT_STORAGE_KEY = 'paios_ai_input_draft';
 
+function getActionPreview(actionType: string, payloadJson: string): { title: string; items: string[]; confirmLabel: string } {
+  try {
+    const payload = JSON.parse(payloadJson);
+    if (actionType === 'CREATE_TASKS' || payload.type === 'CREATE_TASKS') {
+      const tasks = Array.isArray(payload.tasks) ? payload.tasks.slice(0, 10) : [];
+      return {
+        title: `${tasks.length} proposed task${tasks.length === 1 ? '' : 's'}`,
+        items: tasks.map((task: any) => `${task.title || 'Untitled task'} · ${task.category || 'Personal'}${task.priority ? ` · ${task.priority}` : ''}`),
+        confirmLabel: `Confirm and add ${tasks.length} task${tasks.length === 1 ? '' : 's'}`,
+      };
+    }
+    if (actionType === 'ADD_TASK') return { title: 'Proposed task', items: [`${payload.title || 'Untitled task'} · ${payload.category || 'Personal'}`], confirmLabel: 'Confirm and add task' };
+    if (actionType === 'START_ACTIVITY') return { title: 'Proposed focus session', items: [`${payload.name || 'Focus session'} · ${payload.category || 'Work'}`], confirmLabel: 'Confirm and start focus' };
+    if (actionType === 'SAVE_NOTE') return { title: 'Proposed note', items: [payload.text || 'Empty note'], confirmLabel: 'Confirm and save note' };
+    if (actionType === 'LOG_DOSE' || actionType === 'record_medication_dose') return { title: 'Proposed medication record', items: [payload.notes || 'Record the selected scheduled dose'], confirmLabel: 'Confirm medication record' };
+    return { title: 'Proposed workspace change', items: [Object.entries(payload).filter(([key]) => key !== 'type').map(([key, value]) => `${key}: ${String(value)}`).join(' · ')], confirmLabel: 'Confirm and apply' };
+  } catch {
+    return { title: 'Proposed workspace change', items: ['Review the assistant response before continuing.'], confirmLabel: 'Confirm and apply' };
+  }
+}
+
 export const AiScreen: React.FC<AiScreenProps> = ({
   messages,
   userContextString,
@@ -161,7 +182,7 @@ export const AiScreen: React.FC<AiScreenProps> = ({
       starters: [
         { title: 'Morning Briefing', prompt: 'Give me a structured summary of my top priorities and schedule today' },
         { title: 'Time-Block Day', prompt: 'Build an optimized daily timetable blocking focus sessions around my meetings' },
-        { title: 'Add High-Priority Task', prompt: 'Add a high priority task: Complete Playwright regression suite before 5 PM' },
+        { title: 'Brain Dump → Tasks', prompt: 'Turn this brain dump into no more than 7 clear, realistically scoped tasks. Propose them as one CREATE_TASKS action for my approval:\n\n', draftOnly: true },
         { title: 'Start Focus Timer', prompt: 'Start a 30-minute Deep Work focus activity timer' },
       ],
     },
@@ -430,7 +451,14 @@ export const AiScreen: React.FC<AiScreenProps> = ({
                 {currentRole.starters.map((starter, idx) => (
                   <button
                     key={idx}
-                    onClick={() => handleSend(starter.prompt)}
+                    onClick={() => {
+                      if ('draftOnly' in starter && starter.draftOnly) {
+                        setInputText(starter.prompt);
+                        window.setTimeout(() => inputRef.current?.focus(), 0);
+                      } else {
+                        handleSend(starter.prompt);
+                      }
+                    }}
                     className="p-3.5 rounded-2xl bg-slate-950/70 hover:bg-slate-800 border border-slate-800/80 hover:border-indigo-500/60 text-left transition-all group flex flex-col justify-between gap-2 shadow-sm hover:shadow-md"
                   >
                     <div className="flex items-center justify-between w-full">
@@ -540,15 +568,18 @@ export const AiScreen: React.FC<AiScreenProps> = ({
                   {/* Interactive Executable Action Card */}
                   {!msg.isUser && msg.actionType && msg.actionPayloadJson && (
                     <div className="bg-slate-950 border border-indigo-900/80 p-3.5 rounded-2xl space-y-2 shadow-xl">
+                      {(() => {
+                        const preview = getActionPreview(msg.actionType!, msg.actionPayloadJson!);
+                        return <>
                       <div className="flex items-center justify-between text-[11px] font-mono font-bold text-indigo-400">
                         <span className="flex items-center gap-1.5">
-                          <Zap className="w-4 h-4 text-amber-400" /> Proposed Action: {msg.actionType}
+                          <Zap className="w-4 h-4 text-amber-400" /> {preview.title}
                         </span>
                       </div>
 
-                      <pre className="text-[10px] font-mono text-slate-300 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 overflow-x-auto">
-                        {msg.actionPayloadJson}
-                      </pre>
+                      <div className="space-y-1.5 rounded-xl border border-slate-800 bg-slate-900/90 p-2.5">
+                        {preview.items.map((item, index) => <div key={`${msg.id}_${index}`} className="flex items-start gap-2 text-xs text-slate-300"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-400" /><span>{item}</span></div>)}
+                      </div>
 
                       {executedActionIds.includes(msg.id) || msg.isActionConfirmed ? (
                         <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold pt-1">
@@ -559,9 +590,11 @@ export const AiScreen: React.FC<AiScreenProps> = ({
                           onClick={() => handleExecute(msg.id, msg.actionType!, msg.actionPayloadJson!)}
                           className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md"
                         >
-                          <Play className="w-3.5 h-3.5 fill-current" /> Execute & Save to Workspace
+                          <Play className="w-3.5 h-3.5 fill-current" /> {preview.confirmLabel}
                         </button>
                       )}
+                        </>;
+                      })()}
                     </div>
                   )}
                 </div>
