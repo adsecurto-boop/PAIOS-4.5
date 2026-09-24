@@ -14,9 +14,11 @@ import {
   Zap,
   Activity,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 import { ActivityLog, MorningCheckIn, EveningReview, TimelineEntry, Task } from '../types';
 import { GamificationHub } from '../components/GamificationHub';
+import { getSevenDayUsageSummary } from '../utils/usageInsights';
 
 export type TimeframeMode = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' | 'ALL_TIME';
 
@@ -27,6 +29,7 @@ interface InsightsScreenProps {
   tasks?: Task[];
   checkIns: MorningCheckIn[];
   reviews: EveningReview[];
+  usageInsightsEnabled?: boolean;
 }
 
 export const InsightsScreen: React.FC<InsightsScreenProps> = ({
@@ -36,8 +39,10 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
   tasks = [],
   checkIns,
   reviews,
+  usageInsightsEnabled = false,
 }) => {
   const [timeframe, setTimeframe] = useState<TimeframeMode>('DAILY');
+  const usageSummary = getSevenDayUsageSummary();
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -289,6 +294,24 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
           ))}
         </div>
       </div>
+
+      <section className="rounded-2xl border border-emerald-900/50 bg-gradient-to-br from-slate-900 to-emerald-950/20 p-5 shadow-lg">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-400" /><h3 className="font-heading text-sm font-bold text-white">Seven-day daily rhythm</h3></div>
+            <p className="mt-1 text-xs text-slate-400">A private, on-device view of intention, focused action, and reflection.</p>
+          </div>
+          {usageInsightsEnabled && <div className="text-right"><p className="text-xl font-bold text-white">{usageSummary.activeDays}/7</p><p className="text-[10px] text-slate-400">days returned</p></div>}
+        </div>
+        {usageInsightsEnabled ? (
+          <div className="mt-4 grid grid-cols-7 gap-1.5">
+            {usageSummary.days.map((day) => <div key={day.dateString} className="text-center"><div className="flex h-12 flex-col-reverse overflow-hidden rounded-lg border border-slate-800 bg-slate-950" title={`${day.completedSteps} of 3 daily-loop steps`}><div className={`w-full ${day.completedSteps === 3 ? 'bg-emerald-500' : day.completedSteps === 2 ? 'bg-indigo-500' : day.completedSteps === 1 ? 'bg-cyan-700' : 'bg-slate-900'}`} style={{ height: `${Math.max(8, day.completedSteps * 33)}%` }} /></div><span className="mt-1 block text-[9px] text-slate-500">{day.label}</span></div>)}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-dashed border-slate-700 p-4 text-center"><p className="text-xs text-slate-400">Private progress insights are off.</p><p className="mt-1 text-[10px] text-slate-500">Opt in under Settings → Notifications & privacy. Nothing is uploaded.</p></div>
+        )}
+        {usageInsightsEnabled && <p className="mt-3 text-[10px] text-slate-500">{usageSummary.completeLoopDays} complete loop day{usageSummary.completeLoopDays === 1 ? '' : 's'} · {usageSummary.totalEvents} meaningful actions recorded locally</p>}
+      </section>
 
       {/* KPI Growth Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

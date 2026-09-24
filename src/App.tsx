@@ -51,6 +51,7 @@ import { exportAndShareBackup } from './utils/exportShare';
 import { OfflineSyncManager } from './core/sync/OfflineSyncManager';
 import { SyncConflictModal } from './components/SyncConflictModal';
 import { getPendingSyncConflict, PendingSyncConflict } from './firebase';
+import { trackUsageInsight } from './utils/usageInsights';
 
 import { WindowsTitleBar } from './components/WindowsTitleBar';
 import { WindowsTaskBar } from './components/WindowsTaskBar';
@@ -463,6 +464,7 @@ export const App: React.FC = () => {
   // Activity Handlers
   const handleStartActivity = (name: string, category: string, note?: string) => {
     PAIOSStorage.startActivity(name, category, note);
+    trackUsageInsight('FOCUS_STARTED', Boolean(settings.localUsageInsightsEnabled));
     reloadState();
   };
 
@@ -505,11 +507,13 @@ export const App: React.FC = () => {
   // CheckIn & Review
   const handleSaveCheckIn = (checkIn: MorningCheckIn) => {
     PAIOSStorage.saveCheckIn(checkIn);
+    trackUsageInsight('CHECK_IN', Boolean(settings.localUsageInsightsEnabled));
     reloadState();
   };
 
   const handleSaveReview = (review: EveningReview) => {
     PAIOSStorage.saveReview(review);
+    trackUsageInsight('REVIEW_COMPLETED', Boolean(settings.localUsageInsightsEnabled));
     reloadState();
   };
 
@@ -520,7 +524,9 @@ export const App: React.FC = () => {
   };
 
   const handleToggleTaskStatus = (taskId: number) => {
+    const taskWasOpen = PAIOSStorage.getTasks().find((task) => task.id === taskId)?.status !== 'COMPLETED';
     PAIOSStorage.toggleTaskStatus(taskId);
+    if (taskWasOpen) trackUsageInsight('TASK_COMPLETED', Boolean(settings.localUsageInsightsEnabled));
     reloadState();
   };
 
@@ -1234,6 +1240,7 @@ export const App: React.FC = () => {
                   tasks={tasks}
                   checkIns={checkIns}
                   reviews={reviews}
+                  usageInsightsEnabled={Boolean(settings.localUsageInsightsEnabled)}
                 />
               )}
 

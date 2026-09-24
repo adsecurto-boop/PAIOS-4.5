@@ -32,6 +32,7 @@ import { exportAndShareBackup } from '../utils/exportShare';
 import { checkOllamaHealth, sendOllamaChat } from '../services/ollamaClient';
 import { getAuthToken } from '../storage';
 import { requestNotificationPermission } from '../utils/notifications';
+import { clearUsageInsights } from '../utils/usageInsights';
 
 interface SettingsScreenProps {
   settings: UserSettings;
@@ -91,6 +92,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [quietHoursStart, setQuietHoursStart] = useState(settings.notificationQuietHoursStart || '22:30');
   const [quietHoursEnd, setQuietHoursEnd] = useState(settings.notificationQuietHoursEnd || '07:30');
   const [notificationPermission, setNotificationPermission] = useState<'idle' | 'granted' | 'denied'>('idle');
+  const [localUsageInsightsEnabled, setLocalUsageInsightsEnabled] = useState(Boolean(settings.localUsageInsightsEnabled));
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
 
@@ -232,7 +234,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       notificationQuietHoursEnabled: quietHoursEnabled,
       notificationQuietHoursStart: quietHoursStart,
       notificationQuietHoursEnd: quietHoursEnd,
+      localUsageInsightsEnabled,
     });
+    if (!localUsageInsightsEnabled) clearUsageInsights();
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
   };
@@ -392,6 +396,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
             />
           </div>
+        </div>
+
+        <div className="rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h4 className="text-xs font-semibold text-white">Private progress insights</h4>
+              <p className="mt-1 text-[11px] leading-5 text-slate-400">Store check-ins, focus starts, completed tasks, and reviews as anonymous event counts on this device. No titles, journal text, health data, or network analytics are included.</p>
+            </div>
+            <label className="flex shrink-0 items-center gap-2 text-xs text-slate-300">
+              <input type="checkbox" checked={localUsageInsightsEnabled} onChange={(event) => setLocalUsageInsightsEnabled(event.target.checked)} className="h-4 w-4 cursor-pointer rounded accent-emerald-500" />
+              Opt in
+            </label>
+          </div>
+          <p className="mt-2 text-[10px] font-mono text-emerald-400">Device-local only · disabling and saving deletes the ledger</p>
         </div>
 
         <h3 className="font-heading font-bold text-base text-white border-b border-slate-800 pb-3 pt-2 flex items-center gap-2">

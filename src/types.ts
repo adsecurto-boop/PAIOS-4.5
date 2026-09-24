@@ -250,6 +250,7 @@ export interface UserSettings {
   notificationQuietHoursEnabled?: boolean;
   notificationQuietHoursStart?: string; // e.g. "22:30"
   notificationQuietHoursEnd?: string; // e.g. "07:30"
+  localUsageInsightsEnabled?: boolean;
   preferredModel?: string;
   officeStartTime?: string; // e.g. "13:00"
   officeEndTime?: string;   // e.g. "22:00"

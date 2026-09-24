@@ -390,6 +390,7 @@ const initialSettings: UserSettings = {
   notificationQuietHoursEnabled: false,
   notificationQuietHoursStart: '22:30',
   notificationQuietHoursEnd: '07:30',
+  localUsageInsightsEnabled: false,
   officeStartTime: '13:00',
   officeEndTime: '22:00',
   bedtime: '00:00',
