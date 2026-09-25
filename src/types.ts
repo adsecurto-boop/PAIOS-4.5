@@ -48,7 +48,16 @@ export interface QuickCapture {
   category: Category | string;
   tags: string;
   createdAtMillis: number;
+  inboxStatus?: 'UNPROCESSED' | 'DEFERRED' | 'PROCESSED' | 'ARCHIVED';
+  suggestedType?: CaptureDestination;
+  suggestedAmount?: number;
+  deferUntilMillis?: number | null;
+  processedAtMillis?: number | null;
+  processedType?: CaptureDestination | null;
+  processedTargetId?: string | number | null;
 }
+
+export type CaptureDestination = 'TASK' | 'EXPENSE' | 'HEALTH' | 'STUDY' | 'JOURNAL' | 'NOTE';
 
 export interface MorningCheckIn {
   dateString: string; // YYYY-MM-DD

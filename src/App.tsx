@@ -12,7 +12,7 @@ import {
   Play,
   Zap,
 } from 'lucide-react';
-import { NavTab, ActivityLog, Task, TimelineEntry, StudyCard, JournalEntry, MorningCheckIn, EveningReview, AiChatMessage, UserSettings, SearchResults, Medication, DoseEvent, DoseStatus, RefillInventory, VitalSign, DoctorContact, Appointment, AdaptiveTimetableResponse, TimetableStatus } from './types';
+import { NavTab, ActivityLog, Task, TimelineEntry, StudyCard, JournalEntry, MorningCheckIn, EveningReview, AiChatMessage, UserSettings, SearchResults, Medication, DoseEvent, DoseStatus, RefillInventory, VitalSign, DoctorContact, Appointment, AdaptiveTimetableResponse, TimetableStatus, QuickCapture, CaptureDestination, ExpenseTransaction } from './types';
 import { PAIOSStorage, getAuthToken, getTodayDateString, getStartOfDayMillis } from './storage';
 import { TopHeaderBar } from './components/TopHeaderBar';
 import { MiniTimerPlayer } from './components/MiniTimerPlayer';
@@ -54,6 +54,7 @@ import { getPendingSyncConflict, PendingSyncConflict } from './firebase';
 import { trackUsageInsight } from './utils/usageInsights';
 import { applyPlatformClass } from './utils/platform';
 import { getTomorrowNoon, preserveCompletedBlocks } from './utils/dailyCommandCenter';
+import { classifyCapture, tomorrowMorningMillis } from './utils/captureClassifier';
 
 import { WindowsTitleBar } from './components/WindowsTitleBar';
 import { WindowsTaskBar } from './components/WindowsTaskBar';
@@ -91,6 +92,7 @@ export const App: React.FC = () => {
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>([]);
   const [studyCards, setStudyCards] = useState<StudyCard[]>([]);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [captures, setCaptures] = useState<QuickCapture[]>([]);
   const [checkIns, setCheckIns] = useState<MorningCheckIn[]>([]);
   const [reviews, setReviews] = useState<EveningReview[]>([]);
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
@@ -173,6 +175,7 @@ export const App: React.FC = () => {
     setTimelineEntries(PAIOSStorage.getTimelineEntries());
     setStudyCards(PAIOSStorage.getStudyCards());
     setJournalEntries(PAIOSStorage.getJournalEntries());
+    setCaptures(PAIOSStorage.getAllCaptures());
     setCheckIns(PAIOSStorage.getCheckIns());
     setReviews(PAIOSStorage.getReviews());
     setAiMessages(PAIOSStorage.getAiMessages());
@@ -569,6 +572,62 @@ export const App: React.FC = () => {
 
   const handleDeleteTask = (taskId: number) => {
     PAIOSStorage.deleteTask(taskId);
+    reloadState();
+  };
+
+  const handleProcessCapture = (id: number, type: CaptureDestination) => {
+    const capture = PAIOSStorage.getAllCaptures().find((item) => item.id === id);
+    if (!capture) return;
+    const suggestion = classifyCapture(capture.text);
+    let targetId: string | number | null = null;
+
+    if (type === 'TASK') {
+      targetId = PAIOSStorage.addTask(capture.text, capture.category, false, 'Created from PAIOS Inbox').id;
+    } else if (type === 'EXPENSE' && suggestion.amount) {
+      const now = new Date();
+      const transaction: ExpenseTransaction = {
+        id: `tx_inbox_${Date.now()}`,
+        title: capture.text,
+        amount: suggestion.amount,
+        type: 'OUTFLOW',
+        category: 'Other',
+        dateString: getTodayDateString(),
+        timeString: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+        timestampMillis: Date.now(),
+        isNecessity: false,
+        notes: 'Confirmed from PAIOS Inbox',
+        provenance: 'AI_EXTRACTED',
+      };
+      PAIOSStorage.saveExpenseTransaction(transaction);
+      targetId = transaction.id;
+    } else if (type === 'HEALTH') {
+      targetId = PAIOSStorage.logVitalSign({ symptoms: capture.text, note: 'Confirmed from PAIOS Inbox' }).id;
+    } else if (type === 'STUDY') {
+      targetId = PAIOSStorage.addStudyCard(capture.category || 'Inbox', capture.text, 'Add the answer during your next review.').id;
+    } else if (type === 'JOURNAL') {
+      targetId = PAIOSStorage.addJournalEntry('Inbox reflection', capture.text, 5, capture.category).id;
+    }
+
+    PAIOSStorage.updateQuickCapture(id, {
+      inboxStatus: 'PROCESSED',
+      processedAtMillis: Date.now(),
+      processedType: type,
+      processedTargetId: targetId,
+      deferUntilMillis: null,
+    });
+    reloadState();
+  };
+
+  const handleUndoCapture = (id: number) => {
+    const capture = PAIOSStorage.getAllCaptures().find((item) => item.id === id);
+    if (!capture) return;
+    const targetId = capture.processedTargetId;
+    if (capture.processedType === 'TASK' && typeof targetId === 'number') PAIOSStorage.deleteTask(targetId);
+    if (capture.processedType === 'EXPENSE' && typeof targetId === 'string') PAIOSStorage.deleteExpenseTransaction(targetId);
+    if (capture.processedType === 'HEALTH' && typeof targetId === 'string') PAIOSStorage.deleteVitalSign(targetId);
+    if (capture.processedType === 'STUDY' && typeof targetId === 'number') PAIOSStorage.deleteStudyCard(targetId);
+    if (capture.processedType === 'JOURNAL' && typeof targetId === 'number') PAIOSStorage.deleteJournalEntry(targetId);
+    PAIOSStorage.updateQuickCapture(id, { inboxStatus: 'UNPROCESSED', processedAtMillis: null, processedType: null, processedTargetId: null });
     reloadState();
   };
 
@@ -1193,6 +1252,7 @@ export const App: React.FC = () => {
                   timelineEntries={timelineEntries}
                   checkIns={checkIns}
                   reviews={reviews}
+                  inboxCaptures={captures}
                   timetable={timetable}
                   isGeneratingTimetable={isGeneratingTimetable}
                   userName={settings.userName}
@@ -1216,6 +1276,10 @@ export const App: React.FC = () => {
                   }}
                   onOpenPlan={() => setActiveTab(NavTab.TIMELINE)}
                   onRolloverTasks={handleRolloverTasks}
+                  onProcessCapture={handleProcessCapture}
+                  onDeferCapture={(id) => { PAIOSStorage.updateQuickCapture(id, { inboxStatus: 'DEFERRED', deferUntilMillis: tomorrowMorningMillis() }); reloadState(); }}
+                  onArchiveCapture={(id) => { PAIOSStorage.updateQuickCapture(id, { inboxStatus: 'ARCHIVED' }); reloadState(); }}
+                  onUndoCapture={handleUndoCapture}
                 />
               )}
 

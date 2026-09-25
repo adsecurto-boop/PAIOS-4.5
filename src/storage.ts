@@ -33,6 +33,7 @@ import { DEFAULT_BUDGET_PROFILE, MoneyManagerPlugin } from './core/plugins/Money
 import { ConflictResolver } from './core/sync/ConflictResolver';
 import { OfflineSyncManager } from './core/sync/OfflineSyncManager';
 import { paiosDb, migrateLocalStorageToDexie } from './core/db';
+import { classifyCapture } from './utils/captureClassifier';
 
 if (typeof window !== 'undefined') {
   migrateLocalStorageToDexie().catch((err) => console.warn('[PAIOSStorage] Dexie migration notice:', err));
@@ -1193,12 +1194,16 @@ export const storage = {
   },
   addQuickCapture(text: string, category: string = 'Personal'): QuickCapture {
     const captures = this.getAllCaptures();
+    const suggestion = classifyCapture(text);
     const newCapture: QuickCapture = {
       id: Date.now(),
       text,
       category,
       tags: '',
       createdAtMillis: Date.now(),
+      inboxStatus: 'UNPROCESSED',
+      suggestedType: suggestion.type,
+      suggestedAmount: suggestion.amount,
     };
     captures.unshift(newCapture);
     save(STORAGE_KEYS.CAPTURES, captures);
@@ -1218,6 +1223,14 @@ export const storage = {
   deleteQuickCapture(id: number): void {
     const captures = this.getAllCaptures().filter((c) => c.id !== id);
     save(STORAGE_KEYS.CAPTURES, captures);
+  },
+  updateQuickCapture(id: number, changes: Partial<QuickCapture>): QuickCapture | null {
+    const captures = this.getAllCaptures();
+    const index = captures.findIndex((capture) => capture.id === id);
+    if (index < 0) return null;
+    captures[index] = { ...captures[index], ...changes };
+    save(STORAGE_KEYS.CAPTURES, captures);
+    return captures[index];
   },
 
   // --- CHECK-IN & REVIEW ---
@@ -1664,6 +1677,9 @@ export const storage = {
     });
 
     return newVital;
+  },
+  deleteVitalSign(id: string): void {
+    save(STORAGE_KEYS.VITALS, this.getVitalSigns().filter((vital) => vital.id !== id));
   },
   getDoseEvents(dateStr?: string): DoseEvent[] {
     const date = dateStr || getTodayDateString();

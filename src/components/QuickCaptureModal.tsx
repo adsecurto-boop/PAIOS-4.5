@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Zap, Tag } from 'lucide-react';
+import { X, Zap, Tag, Inbox } from 'lucide-react';
 
 interface QuickCaptureModalProps {
   onDismiss: () => void;
@@ -25,7 +25,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ onDismiss,
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2 text-cyan-400">
             <Zap className="w-5 h-5 fill-current" />
-            <h3 className="font-heading font-bold text-lg text-white">Quick Capture Note</h3>
+            <h3 className="font-heading font-bold text-lg text-white">Capture to Inbox</h3>
           </div>
           <button
             onClick={onDismiss}
@@ -39,7 +39,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ onDismiss,
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-              Quick Thought / Note *
+              What just came up? *
             </label>
             <textarea
               rows={3}
@@ -47,7 +47,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ onDismiss,
               autoFocus
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Capture an idea, reminder, or insight instantly..."
+              placeholder="Try: Spent ₹450 on groceries, call the doctor tomorrow, or revise chapter 3..."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
             />
           </div>
@@ -88,7 +88,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({ onDismiss,
               disabled={!text.trim()}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white text-xs font-semibold shadow-md shadow-cyan-600/30 transition-all disabled:opacity-50"
             >
-              Save Note
+              <Inbox className="mr-1.5 inline h-3.5 w-3.5" /> Save to Inbox
             </button>
           </div>
         </form>

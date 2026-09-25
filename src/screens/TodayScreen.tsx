@@ -28,9 +28,10 @@ import {
   CalendarClock,
   AlertTriangle,
 } from 'lucide-react';
-import { ActivityLog, Task, TimelineEntry, MorningCheckIn, EveningReview, AdaptiveTimetableBlock, AdaptiveTimetableResponse } from '../types';
+import { ActivityLog, Task, TimelineEntry, MorningCheckIn, EveningReview, AdaptiveTimetableBlock, AdaptiveTimetableResponse, CaptureDestination, QuickCapture } from '../types';
 import { TimetablePlugin, TimetableProposal } from '../core/plugins/TimetablePlugin';
 import { getDailyCommandState } from '../utils/dailyCommandCenter';
+import { InboxCard } from '../components/InboxCard';
 
 interface TodayScreenProps {
   activeActivity: ActivityLog | null;
@@ -39,6 +40,7 @@ interface TodayScreenProps {
   timelineEntries: TimelineEntry[];
   checkIns: MorningCheckIn[];
   reviews: EveningReview[];
+  inboxCaptures: QuickCapture[];
   timetable: AdaptiveTimetableResponse | null;
   isGeneratingTimetable: boolean;
   userName: string;
@@ -61,6 +63,10 @@ interface TodayScreenProps {
   onStartPlannedBlock: (block: AdaptiveTimetableBlock) => void;
   onOpenPlan: () => void;
   onRolloverTasks: (taskIds: number[]) => void;
+  onProcessCapture: (id: number, type: CaptureDestination) => void;
+  onDeferCapture: (id: number) => void;
+  onArchiveCapture: (id: number) => void;
+  onUndoCapture: (id: number) => void;
 }
 
 export const TodayScreen: React.FC<TodayScreenProps> = ({
@@ -70,6 +76,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   timelineEntries,
   checkIns,
   reviews,
+  inboxCaptures,
   timetable,
   isGeneratingTimetable,
   userName,
@@ -92,6 +99,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   onStartPlannedBlock,
   onOpenPlan,
   onRolloverTasks,
+  onProcessCapture,
+  onDeferCapture,
+  onArchiveCapture,
+  onUndoCapture,
 }) => {
   const [liveSeconds, setLiveSeconds] = useState(0);
   const [activeProposal, setActiveProposal] = useState<TimetableProposal | null>(() =>
@@ -548,6 +559,15 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
           </div>
         </button>
       </section>
+
+      <InboxCard
+        captures={inboxCaptures}
+        onOpenCapture={onOpenQuickCapture}
+        onProcess={onProcessCapture}
+        onDefer={onDeferCapture}
+        onArchive={onArchiveCapture}
+        onUndo={onUndoCapture}
+      />
 
       {/* Today's commitments, not an unbounded task dump. */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
