@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PAIOSStorage } from '../../src/storage';
+import { PAIOSStorage, getTodayDateString } from '../../src/storage';
 import { Medication, RefillInventory, DoctorContact, Appointment } from '../../src/types';
 
 describe('Unit Test: Health & Medication Regimen Engine', () => {
@@ -69,6 +69,31 @@ describe('Unit Test: Health & Medication Regimen Engine', () => {
     PAIOSStorage.deleteMedication('med_del_1');
 
     expect(PAIOSStorage.getMedications().some((m) => m.id === 'med_del_1')).toBe(false);
+    expect(PAIOSStorage.getDoseEvents().some((dose) => dose.medicationId === 'med_del_1')).toBe(false);
+  });
+
+  it('removes deleted prescriptions from current and future ledgers but preserves prior-day history', () => {
+    const today = getTodayDateString();
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth() + 1).padStart(2, '0')}-${String(yesterdayDate.getDate()).padStart(2, '0')}`;
+    const med: Medication = {
+      id: 'med_ledger_delete', genericName: 'Test Medicine', brandName: 'Test', dosageStrength: 10,
+      dosageUnit: 'mg', form: 'tablet', route: 'oral', status: 'active', instructions: 'Daily',
+      scheduleTimes: ['08:00'], createdAtMillis: Date.now(),
+    };
+    PAIOSStorage.saveMedication(med);
+    PAIOSStorage.setItem('paios_dose_events_v1', {
+      [yesterday]: [{ id: 'past', medicationId: med.id, medicationName: 'Test Medicine', dosage: '10 mg', scheduledTime: '08:00', scheduledDateString: yesterday, status: 'TAKEN' }],
+      [today]: [{ id: 'today', medicationId: med.id, medicationName: 'Test Medicine', dosage: '10 mg', scheduledTime: '08:00', scheduledDateString: today, status: 'SCHEDULED' }],
+      '2099-01-01': [{ id: 'future', medicationId: med.id, medicationName: 'Test Medicine', dosage: '10 mg', scheduledTime: '08:00', scheduledDateString: '2099-01-01', status: 'SCHEDULED' }],
+    });
+
+    PAIOSStorage.deleteMedication(med.id);
+
+    expect(PAIOSStorage.getDoseEvents(today).some((dose) => dose.medicationId === med.id)).toBe(false);
+    expect(PAIOSStorage.getDoseEvents('2099-01-01').some((dose) => dose.medicationId === med.id)).toBe(false);
+    expect(PAIOSStorage.getDoseEvents(yesterday).filter((dose) => dose.medicationId === med.id).map((dose) => dose.id)).toEqual(['past']);
   });
 
   it('saves doctor contact information', () => {

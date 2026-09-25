@@ -691,7 +691,9 @@ function save<T>(key: string, value: T): void {
         : typeof value === 'object' && value !== null
         ? (Object.values(value) as DoseEvent[][]).flat()
         : [];
-      paiosDb.doseEvents.bulkPut(doseList).catch(() => {});
+      // Dose slots are a materialized ledger. Replace the table so removed or
+      // rescheduled slots cannot be resurrected during the next hydration.
+      paiosDb.doseEvents.clear().then(() => paiosDb.doseEvents.bulkPut(doseList)).catch(() => {});
     } else if ((key === STORAGE_KEYS.EXPENSES || key === 'paios_expense_transactions_v1') && Array.isArray(value)) {
       paiosDb.transactions.clear().then(() => paiosDb.transactions.bulkPut(value)).catch(() => {});
     } else if (key === STORAGE_KEYS.REFILLS && Array.isArray(value)) {
@@ -1451,6 +1453,28 @@ export const storage = {
   deleteMedication(id: string): void {
     const list = this.getMedications().filter((m) => m.id !== id);
     save(STORAGE_KEYS.MEDICATIONS, list);
+
+    // Removing a prescription must also withdraw its actionable slots from
+    // today's and future ledgers. Prior-day dose history remains available for
+    // clinical/audit context, and logged timeline events are never rewritten.
+    const today = getTodayDateString();
+    const rawEvents = load<Record<string, DoseEvent[]> | DoseEvent[]>(STORAGE_KEYS.DOSE_EVENTS, {});
+    const allEvents: Record<string, DoseEvent[]> = {};
+    if (Array.isArray(rawEvents)) {
+      rawEvents.forEach((dose) => {
+        const date = dose.scheduledDateString || today;
+        if (!allEvents[date]) allEvents[date] = [];
+        allEvents[date].push(dose);
+      });
+    } else {
+      Object.assign(allEvents, rawEvents);
+    }
+    Object.keys(allEvents).forEach((date) => {
+      if (date >= today) {
+        allEvents[date] = allEvents[date].filter((dose) => dose.medicationId !== id);
+      }
+    });
+    save(STORAGE_KEYS.DOSE_EVENTS, allEvents);
   },
   getRefillInventories(): RefillInventory[] {
     return load(STORAGE_KEYS.REFILLS, initialRefills);
@@ -1680,6 +1704,19 @@ export const storage = {
       allEvents[date] = dateEvents;
       modified = true;
     } else {
+      // Self-heal stale/cloud-restored slots for prescriptions that no longer
+      // exist. Past ledgers are immutable; current and future schedules reflect
+      // the active regimen vault.
+      if (date >= getTodayDateString()) {
+        const activeMedicationIds = new Set(meds.map((med) => med.id));
+        const reconciledEvents = dateEvents.filter((dose) => activeMedicationIds.has(dose.medicationId));
+        if (reconciledEvents.length !== dateEvents.length) {
+          dateEvents = reconciledEvents;
+          allEvents[date] = dateEvents;
+          modified = true;
+        }
+      }
+
       // Ensure all active medication schedule times have a corresponding slot
       meds.forEach((m) => {
         m.scheduleTimes.forEach((time) => {
