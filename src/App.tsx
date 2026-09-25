@@ -12,7 +12,7 @@ import {
   Play,
   Zap,
 } from 'lucide-react';
-import { NavTab, ActivityLog, Task, TimelineEntry, StudyCard, JournalEntry, MorningCheckIn, EveningReview, AiChatMessage, UserSettings, SearchResults, Medication, DoseEvent, DoseStatus, RefillInventory, VitalSign, DoctorContact, Appointment, AdaptiveTimetableResponse, TimetableStatus, QuickCapture, CaptureDestination, ExpenseTransaction } from './types';
+import { NavTab, ActivityLog, Task, TimelineEntry, StudyCard, JournalEntry, MorningCheckIn, EveningReview, AiChatMessage, UserSettings, SearchResults, Medication, DoseEvent, DoseStatus, RefillInventory, VitalSign, DoctorContact, Appointment, AdaptiveTimetableResponse, TimetableStatus, QuickCapture, CaptureDestination, ExpenseTransaction, WeeklyReview } from './types';
 import { PAIOSStorage, getAuthToken, getTodayDateString, getStartOfDayMillis } from './storage';
 import { TopHeaderBar } from './components/TopHeaderBar';
 import { MiniTimerPlayer } from './components/MiniTimerPlayer';
@@ -55,6 +55,7 @@ import { trackUsageInsight } from './utils/usageInsights';
 import { applyPlatformClass } from './utils/platform';
 import { getTomorrowNoon, preserveCompletedBlocks } from './utils/dailyCommandCenter';
 import { classifyCapture, tomorrowMorningMillis } from './utils/captureClassifier';
+import { getWeekStart, toLocalDateString } from './utils/weeklyReview';
 
 import { WindowsTitleBar } from './components/WindowsTitleBar';
 import { WindowsTaskBar } from './components/WindowsTaskBar';
@@ -95,6 +96,7 @@ export const App: React.FC = () => {
   const [captures, setCaptures] = useState<QuickCapture[]>([]);
   const [checkIns, setCheckIns] = useState<MorningCheckIn[]>([]);
   const [reviews, setReviews] = useState<EveningReview[]>([]);
+  const [weeklyReviews, setWeeklyReviews] = useState<WeeklyReview[]>([]);
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
   const [settings, setSettings] = useState<UserSettings>(PAIOSStorage.getSettings());
   const [timetable, setTimetable] = useState<AdaptiveTimetableResponse | null>(PAIOSStorage.getAdaptiveTimetable());
@@ -178,6 +180,7 @@ export const App: React.FC = () => {
     setCaptures(PAIOSStorage.getAllCaptures());
     setCheckIns(PAIOSStorage.getCheckIns());
     setReviews(PAIOSStorage.getReviews());
+    setWeeklyReviews(PAIOSStorage.getWeeklyReviews());
     setAiMessages(PAIOSStorage.getAiMessages());
     setSettings(PAIOSStorage.getSettings());
     setMedications(PAIOSStorage.getMedications());
@@ -572,6 +575,19 @@ export const App: React.FC = () => {
 
   const handleDeleteTask = (taskId: number) => {
     PAIOSStorage.deleteTask(taskId);
+    reloadState();
+  };
+
+  const handleSaveWeeklyReview = (review: WeeklyReview, createTasks: boolean) => {
+    PAIOSStorage.saveWeeklyReview(review);
+    if (createTasks) {
+      const existingTitles = new Set(PAIOSStorage.getTasks().map((task) => task.title.trim().toLowerCase()));
+      review.nextOutcomes.forEach((outcome) => {
+        if (!existingTitles.has(outcome.toLowerCase())) {
+          PAIOSStorage.addTask(outcome, 'Personal', true, `Weekly outcome · Week of ${review.weekStartDateString}`);
+        }
+      });
+    }
     reloadState();
   };
 
@@ -1151,6 +1167,7 @@ export const App: React.FC = () => {
   };
 
   const todayStr = new Date().toISOString().split('T')[0];
+  const currentWeekStart = toLocalDateString(getWeekStart());
   const todayCheckIn = checkIns.find((c) => c.dateString === todayStr) || null;
   const todayReview = reviews.find((r) => r.dateString === todayStr) || null;
 
@@ -1253,6 +1270,8 @@ export const App: React.FC = () => {
                   checkIns={checkIns}
                   reviews={reviews}
                   inboxCaptures={captures}
+                  activityLogs={activityLogs}
+                  weeklyReview={weeklyReviews.find((review) => review.weekStartDateString === currentWeekStart)}
                   timetable={timetable}
                   isGeneratingTimetable={isGeneratingTimetable}
                   userName={settings.userName}
@@ -1280,6 +1299,7 @@ export const App: React.FC = () => {
                   onDeferCapture={(id) => { PAIOSStorage.updateQuickCapture(id, { inboxStatus: 'DEFERRED', deferUntilMillis: tomorrowMorningMillis() }); reloadState(); }}
                   onArchiveCapture={(id) => { PAIOSStorage.updateQuickCapture(id, { inboxStatus: 'ARCHIVED' }); reloadState(); }}
                   onUndoCapture={handleUndoCapture}
+                  onSaveWeeklyReview={handleSaveWeeklyReview}
                 />
               )}
 

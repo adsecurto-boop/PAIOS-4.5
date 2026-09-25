@@ -5,6 +5,7 @@ import {
   QuickCapture,
   MorningCheckIn,
   EveningReview,
+  WeeklyReview,
   JournalEntry,
   StudyCard,
   AIMessage,
@@ -49,6 +50,7 @@ const STORAGE_KEYS = {
   CAPTURES: 'paios_captures_v1',
   CHECKIN: 'paios_checkin_v1',
   REVIEW: 'paios_review_v1',
+  WEEKLY_REVIEWS: 'paios_weekly_reviews_v1',
   JOURNAL: 'paios_journal_v1',
   STUDY_CARDS: 'paios_study_cards_v1',
   AI_MESSAGES: 'paios_ai_messages_v1',
@@ -1285,6 +1287,18 @@ export const storage = {
   },
   saveReview(review: EveningReview): void {
     this.saveEveningReview(review);
+  },
+
+  // --- WEEKLY RESET ---
+  getWeeklyReviews(): WeeklyReview[] {
+    return Object.values(load<Record<string, WeeklyReview>>(STORAGE_KEYS.WEEKLY_REVIEWS, {}))
+      .sort((a, b) => b.weekStartDateString.localeCompare(a.weekStartDateString));
+  },
+  saveWeeklyReview(review: WeeklyReview): WeeklyReview {
+    const reviews = load<Record<string, WeeklyReview>>(STORAGE_KEYS.WEEKLY_REVIEWS, {});
+    reviews[review.weekStartDateString] = review;
+    save(STORAGE_KEYS.WEEKLY_REVIEWS, reviews);
+    return review;
   },
 
   // --- JOURNAL ---

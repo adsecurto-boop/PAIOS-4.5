@@ -28,10 +28,11 @@ import {
   CalendarClock,
   AlertTriangle,
 } from 'lucide-react';
-import { ActivityLog, Task, TimelineEntry, MorningCheckIn, EveningReview, AdaptiveTimetableBlock, AdaptiveTimetableResponse, CaptureDestination, QuickCapture } from '../types';
+import { ActivityLog, Task, TimelineEntry, MorningCheckIn, EveningReview, AdaptiveTimetableBlock, AdaptiveTimetableResponse, CaptureDestination, QuickCapture, WeeklyReview } from '../types';
 import { TimetablePlugin, TimetableProposal } from '../core/plugins/TimetablePlugin';
 import { getDailyCommandState } from '../utils/dailyCommandCenter';
 import { InboxCard } from '../components/InboxCard';
+import { WeeklyResetCard } from '../components/WeeklyResetCard';
 
 interface TodayScreenProps {
   activeActivity: ActivityLog | null;
@@ -41,6 +42,8 @@ interface TodayScreenProps {
   checkIns: MorningCheckIn[];
   reviews: EveningReview[];
   inboxCaptures: QuickCapture[];
+  activityLogs: ActivityLog[];
+  weeklyReview?: WeeklyReview;
   timetable: AdaptiveTimetableResponse | null;
   isGeneratingTimetable: boolean;
   userName: string;
@@ -67,6 +70,7 @@ interface TodayScreenProps {
   onDeferCapture: (id: number) => void;
   onArchiveCapture: (id: number) => void;
   onUndoCapture: (id: number) => void;
+  onSaveWeeklyReview: (review: WeeklyReview, createTasks: boolean) => void;
 }
 
 export const TodayScreen: React.FC<TodayScreenProps> = ({
@@ -77,6 +81,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   checkIns,
   reviews,
   inboxCaptures,
+  activityLogs,
+  weeklyReview,
   timetable,
   isGeneratingTimetable,
   userName,
@@ -103,6 +109,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   onDeferCapture,
   onArchiveCapture,
   onUndoCapture,
+  onSaveWeeklyReview,
 }) => {
   const [liveSeconds, setLiveSeconds] = useState(0);
   const [activeProposal, setActiveProposal] = useState<TimetableProposal | null>(() =>
@@ -567,6 +574,15 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         onDefer={onDeferCapture}
         onArchive={onArchiveCapture}
         onUndo={onUndoCapture}
+      />
+
+      <WeeklyResetCard
+        tasks={todayTasks}
+        activities={activityLogs}
+        checkIns={checkIns}
+        reviews={reviews}
+        savedReview={weeklyReview}
+        onSave={onSaveWeeklyReview}
       />
 
       {/* Today's commitments, not an unbounded task dump. */}

@@ -87,6 +87,18 @@ export interface EveningReview {
   createdAtMillis: number;
 }
 
+export interface WeeklyReview {
+  weekStartDateString: string;
+  wins: string;
+  lesson: string;
+  nextOutcomes: string[];
+  completedTasks: number;
+  focusMinutes: number;
+  rhythmDays: number;
+  createdAtMillis: number;
+  updatedAtMillis: number;
+}
+
 export interface JournalEntry {
   id: number;
   title: string;
