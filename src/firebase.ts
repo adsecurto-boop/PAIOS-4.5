@@ -23,6 +23,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
+import { getSyncMetadata, mergeCloudSnapshots, storeSyncMetadata, SyncMetadata } from './utils/recordSync';
 
 // Initialize Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -73,6 +74,7 @@ const STORAGE_KEYS = {
   CAPTURES: 'paios_captures_v1',
   CHECKIN: 'paios_checkin_v1',
   REVIEW: 'paios_review_v1',
+  WEEKLY_REVIEWS: 'paios_weekly_reviews_v1',
   JOURNAL: 'paios_journal_v1',
   STUDY_CARDS: 'paios_study_cards_v1',
   AI_MESSAGES: 'paios_ai_messages_v1',
@@ -87,6 +89,8 @@ const STORAGE_KEYS = {
   EXPENSES: 'paios_expenses_v1',
   DAILY_SURPLUS: 'paios_daily_surplus_v1',
   BUDGET_RECOVERY: 'paios_budget_recovery_v1',
+  SAVINGS_POTS: 'paios_savings_pots_v1',
+  POT_ALLOCATIONS: 'paios_pot_allocations_v1',
 };
 
 let quotaExceededFlag = false;
@@ -479,9 +483,10 @@ export async function syncLocalToCloud(userId: string): Promise<boolean> {
     const snapshot = getLocalSnapshot();
     const userDocRef = doc(db, 'user_data', userId);
     lastLocalSaveTime = Date.now();
-    await setDoc(userDocRef, {
-      snapshot,
-      updatedAt: lastLocalSaveTime,
+      await setDoc(userDocRef, {
+        snapshot,
+        syncMetadata: getSyncMetadata(),
+        updatedAt: lastLocalSaveTime,
       userUid: userId,
     }, { merge: true });
     hasPendingLocalChanges = false;
@@ -506,7 +511,7 @@ export function getPendingSyncConflict(): PendingSyncConflict | null {
   return pendingSyncConflict;
 }
 
-function applyRemoteSnapshot(snapshot: Record<string, unknown>, remoteUpdatedAt: number): void {
+function applyRemoteSnapshot(snapshot: Record<string, unknown>, remoteUpdatedAt: number, metadata?: SyncMetadata): void {
   lastRemoteUpdate = remoteUpdatedAt;
   isApplyingRemoteUpdate = true;
   Object.entries(snapshot).forEach(([key, val]) => {
@@ -514,6 +519,7 @@ function applyRemoteSnapshot(snapshot: Record<string, unknown>, remoteUpdatedAt:
       localStorage.setItem(key, JSON.stringify(val));
     } catch (e) {}
   });
+  if (metadata) storeSyncMetadata(metadata);
   window.dispatchEvent(new Event('paios_storage_change'));
   isApplyingRemoteUpdate = false;
   hasPendingLocalChanges = false;
@@ -550,13 +556,17 @@ export function listenToCloudData(userId: string, onSyncComplete?: () => void): 
 
     // Only apply remote update if it's newer than our last remote update and last local save
     if (data?.snapshot && remoteUpdatedAt > lastRemoteUpdate && remoteUpdatedAt > lastLocalSaveTime) {
-      if (hasPendingLocalChanges) {
-        pendingSyncConflict = { remoteSnapshot: data.snapshot, remoteUpdatedAt, detectedAt: Date.now() };
-        window.dispatchEvent(new Event('paios_sync_conflict'));
-        emitSyncStatus('error', 'Review changes from another device');
-        return;
-      }
-      applyRemoteSnapshot(data.snapshot, remoteUpdatedAt);
+      const localSnapshot = getLocalSnapshot();
+      const merged = mergeCloudSnapshots(
+        localSnapshot,
+        data.snapshot,
+        getSyncMetadata(),
+        data.syncMetadata as SyncMetadata | undefined,
+        remoteUpdatedAt,
+      );
+      const needsCloudMerge = JSON.stringify(merged.snapshot) !== JSON.stringify(data.snapshot);
+      applyRemoteSnapshot(merged.snapshot, remoteUpdatedAt, merged.metadata);
+      if (needsCloudMerge) window.setTimeout(() => syncLocalToCloud(userId), 0);
       if (onSyncComplete) onSyncComplete();
     }
   }, (err) => {

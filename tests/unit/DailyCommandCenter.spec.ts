@@ -22,6 +22,8 @@ describe('daily command center', () => {
     expect(state.isDrifting).toBe(true);
     expect(state.missedBlocks.map((block) => block.id)).toEqual(['past']);
     expect(state.nextBlock?.id).toBe('next');
+    expect(state.nowBlock?.id).toBe('next');
+    expect(state.nextBlocks).toEqual([]);
   });
 
   it('offers only open priority or due tasks for confirmed rollover', () => {

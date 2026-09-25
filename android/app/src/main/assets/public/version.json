@@ -1,26 +1,26 @@
 {
-  "version": "4.7.0",
-  "buildNumber": "10",
+  "version": "4.7.1",
+  "buildNumber": "11",
   "buildTimestamp": 1787760000000,
   "gitCommit": "c3249c0",
-  "releaseNotes": "PAIOS v4.7.0: Reliable native updates and a focused application interface",
+  "releaseNotes": "PAIOS v4.7.1: Adaptive Today lanes and record-level cross-device sync",
   "mandatory": false,
   "platforms": {
     "windows": {
       "url": "https://raw.githubusercontent.com/adsecurto-boop/PAIOS-4.5/main/public/updates/PAIOS-Web-Dist.zip",
       "jenkinsUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
       "filename": "PAIOS-Web-Dist.zip",
-      "version": "4.7.0"
+      "version": "4.7.1"
     },
     "android": {
       "url": "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/app-release.apk",
       "jenkinsUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk",
       "debugUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk",
       "filename": "app-release.apk",
-      "version": "4.7.0"
+      "version": "4.7.1"
     },
     "web": {
-      "version": "4.7.0"
+      "version": "4.7.1"
     }
   }
 }

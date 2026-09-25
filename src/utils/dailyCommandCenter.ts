@@ -10,6 +10,9 @@ const minutesFromTime = (value: string): number => {
 export interface DailyCommandState {
   hasTodayPlan: boolean;
   nextBlock: AdaptiveTimetableBlock | null;
+  nowBlock: AdaptiveTimetableBlock | null;
+  nextBlocks: AdaptiveTimetableBlock[];
+  laterBlocks: AdaptiveTimetableBlock[];
   missedBlocks: AdaptiveTimetableBlock[];
   isDrifting: boolean;
   openTasks: Task[];
@@ -31,6 +34,15 @@ export const getDailyCommandState = (
   const nextBlock = openBlocks
     .filter((block) => minutesFromTime(block.end) >= currentMinutes)
     .sort((a, b) => minutesFromTime(a.start) - minutesFromTime(b.start))[0] || null;
+  const orderedRemaining = openBlocks
+    .filter((block) => minutesFromTime(block.end) >= currentMinutes)
+    .sort((a, b) => minutesFromTime(a.start) - minutesFromTime(b.start));
+  const inProgress = timetable?.blocks.find((block) => block.status === 'in_progress') || null;
+  const happeningNow = orderedRemaining.find((block) =>
+    minutesFromTime(block.start) <= currentMinutes && minutesFromTime(block.end) > currentMinutes
+  ) || null;
+  const nowBlock = inProgress || happeningNow || orderedRemaining[0] || null;
+  const afterNow = nowBlock ? orderedRemaining.filter((block) => block.id !== nowBlock.id) : orderedRemaining;
   const openTasks = tasks.filter((task) => task.status !== 'COMPLETED' && task.status !== 'CANCELLED');
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
@@ -41,6 +53,9 @@ export const getDailyCommandState = (
   return {
     hasTodayPlan,
     nextBlock,
+    nowBlock,
+    nextBlocks: afterNow.slice(0, 2),
+    laterBlocks: afterNow.slice(2),
     missedBlocks,
     isDrifting: missedBlocks.length > 0,
     openTasks,

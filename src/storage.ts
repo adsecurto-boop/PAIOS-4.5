@@ -35,6 +35,7 @@ import { ConflictResolver } from './core/sync/ConflictResolver';
 import { OfflineSyncManager } from './core/sync/OfflineSyncManager';
 import { paiosDb, migrateLocalStorageToDexie } from './core/db';
 import { classifyCapture } from './utils/captureClassifier';
+import { recordLocalSyncMutation } from './utils/recordSync';
 
 if (typeof window !== 'undefined') {
   migrateLocalStorageToDexie().catch((err) => console.warn('[PAIOSStorage] Dexie migration notice:', err));
@@ -638,6 +639,7 @@ function save<T>(key: string, value: T): void {
   }
 
   // 1. Synchronously populate in-memory cache
+  recordLocalSyncMutation(key, oldValue, value, now);
   memoryCache.set(key, { value, timestamp: now });
 
   // 2. Persist to LocalStorage

@@ -120,7 +120,7 @@ const getStoredActiveVersion = (): string | null => {
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem('paios_active_version');
-      const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.7.0';
+      const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.7.1';
       // Never honor a stored version if it is older than or equal to the compiled code version!
       if (stored && isSemVerGreater(stored, compiled)) {
         return stored;
@@ -136,11 +136,11 @@ const getStoredActiveVersion = (): string | null => {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.7.0'),
-  buildNumber: '10',
+  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.7.1'),
+  buildNumber: '11',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
   gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'c3249c0'),
-  releaseNotes: 'PAIOS v4.7.0: Reliable native updates and a focused application interface',
+  releaseNotes: 'PAIOS v4.7.1: Adaptive Today lanes and record-level cross-device sync',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
@@ -370,7 +370,7 @@ export class UpdateService {
     }
 
     // Compose final remote manifest
-    const targetVersion = fetchedManifest?.version || current.version || '4.7.0';
+    const targetVersion = fetchedManifest?.version || current.version || '4.7.1';
     const targetCommit =
       latestCommitInfo?.shortSha ||
       fetchedManifest?.gitCommit ||
@@ -378,7 +378,7 @@ export class UpdateService {
 
     const manifest: VersionManifest = {
       version: targetVersion,
-      buildNumber: fetchedManifest?.buildNumber || 10,
+      buildNumber: fetchedManifest?.buildNumber || 11,
       buildTimestamp:
         latestCommitInfo?.date
           ? new Date(latestCommitInfo.date).getTime()
@@ -390,7 +390,7 @@ export class UpdateService {
       releaseNotes:
         latestCommitInfo?.title ||
         fetchedManifest?.releaseNotes ||
-        'PAIOS v4.7.0: Reliable native updates and a focused application interface',
+        'PAIOS v4.7.1: Adaptive Today lanes and record-level cross-device sync',
       platforms: {
         windows: {
           url:
@@ -416,7 +416,7 @@ export class UpdateService {
     this.cachedManifest = manifest;
 
     const runningCommit = (getStoredActiveCommit() || current.gitCommit || '').trim();
-    const runningVersion = (getStoredActiveVersion() || current.version || '4.7.0').trim();
+    const runningVersion = (getStoredActiveVersion() || current.version || '4.7.1').trim();
 
     // STRICT SEMVER GATING:
     // Only prompt when the published semantic version is strictly newer.

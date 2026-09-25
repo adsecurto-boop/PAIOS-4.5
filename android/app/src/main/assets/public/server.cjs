@@ -466,11 +466,11 @@ app.post("/assistant/test", requireAuth, async (req, res) => {
   }
 });
 var dynamicVersionManifest = {
-  version: "4.7.0",
-  buildNumber: "10",
+  version: "4.7.1",
+  buildNumber: "11",
   buildTimestamp: Date.now(),
   gitCommit: "c3249c0",
-  releaseNotes: "PAIOS v4.7.0: Reliable native updates and a focused application interface",
+  releaseNotes: "PAIOS v4.7.1: Adaptive Today lanes and record-level cross-device sync",
   platforms: {
     windows: {
       url: "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip",

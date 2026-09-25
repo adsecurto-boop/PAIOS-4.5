@@ -302,6 +302,48 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         )}
       </section>
 
+      {commandState.hasTodayPlan && commandState.nowBlock && (
+        <section className="grid gap-3 lg:grid-cols-[1.15fr_1fr_1fr]" aria-label="Adaptive day plan">
+          <div className="rounded-2xl border border-emerald-700/50 bg-emerald-950/25 p-4 shadow-lg">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-300">Now</p>
+              <span className="text-[10px] font-mono text-slate-400">{commandState.nowBlock.start}–{commandState.nowBlock.end}</span>
+            </div>
+            <h3 className="mt-2 text-sm font-bold text-white">{commandState.nowBlock.activity}</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-400">{commandState.nowBlock.reason || 'Best next step based on today’s priorities and available time.'}</p>
+            {!activeActivity && commandState.nowBlock.status !== 'in_progress' && (
+              <button type="button" onClick={() => onStartPlannedBlock(commandState.nowBlock!)} className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500">
+                <Play className="mr-1 inline h-3.5 w-3.5 fill-current" /> Start now
+              </button>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-indigo-800/50 bg-indigo-950/20 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-300">Next</p>
+            <div className="mt-2 space-y-2">
+              {commandState.nextBlocks.length ? commandState.nextBlocks.map((block) => (
+                <div key={block.id} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                  <div className="flex items-start justify-between gap-2"><span className="text-xs font-semibold text-slate-100">{block.activity}</span><span className="shrink-0 text-[10px] font-mono text-slate-500">{block.start}</span></div>
+                  <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500">{block.reason || `${block.duration_minutes} focused minutes`}</p>
+                </div>
+              )) : <p className="text-xs text-slate-500">Nothing else needs your attention yet.</p>}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+            <div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Later</p><span className="text-[10px] text-slate-600">{commandState.laterBlocks.length} blocks</span></div>
+            <div className="mt-2 space-y-2">
+              {commandState.laterBlocks.slice(0, 3).map((block) => (
+                <div key={block.id} className="flex items-center justify-between gap-3 border-b border-slate-800/70 pb-2 text-xs last:border-0">
+                  <span className="truncate text-slate-300">{block.activity}</span><span className="shrink-0 font-mono text-[10px] text-slate-500">{block.start}</span>
+                </div>
+              ))}
+              {!commandState.laterBlocks.length && <p className="text-xs text-slate-500">Your remaining day has breathing room.</p>}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-lg">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
