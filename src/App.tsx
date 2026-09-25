@@ -61,6 +61,12 @@ import { DesktopAppExportModal } from './components/DesktopAppExportModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { QuickAddMenu } from './components/QuickAddMenu';
 import { DesktopNavigation } from './components/DesktopNavigation';
+import { ActionRecovery } from './core/actions/ActionRecovery';
+import { UniversalCommandBar } from './components/actions/UniversalCommandBar';
+import { UndoToast } from './components/actions/UndoToast';
+import { ActionUndoManager } from './core/actions/ActionUndoManager';
+import { ActionTransactionManager } from './core/actions/ActionTransactionManager';
+import { ProposedAction } from './core/actions/actionTypes';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>(NavTab.AI);
@@ -129,6 +135,8 @@ export const App: React.FC = () => {
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showSetupWizardModal, setShowSetupWizardModal] = useState(false);
   const [showUpdatePromptModal, setShowUpdatePromptModal] = useState(false);
+  const [showCommandBar, setShowCommandBar] = useState(false);
+  const [undoToastData, setUndoToastData] = useState<{ transactionId: string; summary: string } | null>(null);
   const [latestServerManifest, setLatestServerManifest] = useState<VersionManifest | null>(null);
   const [pendingSyncConflict, setPendingSyncConflict] = useState<PendingSyncConflict | null>(null);
 
@@ -154,6 +162,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const appWindow = window as Window & { __PAIOS_HANDLE_BACK__?: () => boolean };
     appWindow.__PAIOS_HANDLE_BACK__ = () => {
+      if (showCommandBar) { setShowCommandBar(false); return true; }
       if (showQuickAddMenu) { setShowQuickAddMenu(false); return true; }
       if (showSearchModal) { setShowSearchModal(false); return true; }
       if (showNotificationModal) { setShowNotificationModal(false); return true; }
@@ -172,7 +181,7 @@ export const App: React.FC = () => {
       return false;
     };
     return () => { delete appWindow.__PAIOS_HANDLE_BACK__; };
-  }, [activeTab, showAuthModal, showCheckInModal, showExportModal, showFinishActivityModal,
+  }, [activeTab, showAuthModal, showCheckInModal, showCommandBar, showExportModal, showFinishActivityModal,
     showNotificationModal, showQuickAddMenu, showQuickCaptureModal, showReviewModal,
     showSearchModal, showSetupWizardModal, showStartActivityModal, showStudyCardModal,
     showTaskModal, showUpdatePromptModal]);
@@ -204,11 +213,23 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
+    // Startup recovery of pending or interrupted transactions
+    ActionRecovery.recoverPendingTransactions();
     reloadState();
+
     const handleStorageChange = () => {
       reloadState();
     };
     window.addEventListener('paios_storage_change', handleStorageChange);
+    window.addEventListener('paios_state_change', handleStorageChange);
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowCommandBar((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
 
     const handleNavigate = (e: any) => {
       const detail = e.detail;
@@ -239,6 +260,8 @@ export const App: React.FC = () => {
 
     return () => {
       window.removeEventListener('paios_storage_change', handleStorageChange);
+      window.removeEventListener('paios_state_change', handleStorageChange);
+      window.removeEventListener('keydown', handleGlobalKeyDown);
       window.removeEventListener('paios_navigate', handleNavigate);
       window.removeEventListener('paios_sync_conflict', handleSyncConflict);
       unsubscribeUpdate();
@@ -888,19 +911,6 @@ export const App: React.FC = () => {
           actionPayloadJson: data.actionPayloadJson || undefined,
         };
 
-        // Auto-execute dose recording tool mutations immediately into Health ledger
-        if (
-          botMsg.actionType === 'LOG_DOSE' ||
-          botMsg.actionType === 'record_medication_dose' ||
-          (botMsg.actionPayloadJson && (botMsg.actionPayloadJson.includes('LOG_DOSE') || botMsg.actionPayloadJson.includes('record_medication_dose')))
-        ) {
-          handleExecuteAiAction(botMsg.actionType || 'LOG_DOSE', botMsg.actionPayloadJson!);
-          botMsg.isActionConfirmed = true;
-        } else if (/\b(take|took|mark.*dose|record.*dose|log.*dose)\b/i.test(userText)) {
-          handleExecuteAiAction('LOG_DOSE', JSON.stringify({ type: 'record_medication_dose', action: 'TAKEN', medication_ids: ['all_due'] }));
-          botMsg.isActionConfirmed = true;
-        }
-
         PAIOSStorage.addAiMessage(botMsg);
         reloadState();
         return;
@@ -930,19 +940,6 @@ export const App: React.FC = () => {
         actionPayloadJson: fallbackData.actionPayloadJson || undefined,
       };
 
-      // Auto-execute dose recording tool mutations in fallback flow
-      if (
-        botMsg.actionType === 'LOG_DOSE' ||
-        botMsg.actionType === 'record_medication_dose' ||
-        (botMsg.actionPayloadJson && (botMsg.actionPayloadJson.includes('LOG_DOSE') || botMsg.actionPayloadJson.includes('record_medication_dose')))
-      ) {
-        handleExecuteAiAction(botMsg.actionType || 'LOG_DOSE', botMsg.actionPayloadJson!);
-        botMsg.isActionConfirmed = true;
-      } else if (/\b(take|took|mark.*dose|record.*dose|log.*dose)\b/i.test(userText)) {
-        handleExecuteAiAction('LOG_DOSE', JSON.stringify({ type: 'record_medication_dose', action: 'TAKEN', medication_ids: ['all_due'] }));
-        botMsg.isActionConfirmed = true;
-      }
-
       PAIOSStorage.addAiMessage(botMsg);
       reloadState();
     } catch (err: any) {
@@ -968,18 +965,6 @@ export const App: React.FC = () => {
           actionType: (fallbackData.actionType as any) || undefined,
           actionPayloadJson: fallbackData.actionPayloadJson || undefined,
         };
-
-        if (
-          botMsg.actionType === 'LOG_DOSE' ||
-          botMsg.actionType === 'record_medication_dose' ||
-          (botMsg.actionPayloadJson && (botMsg.actionPayloadJson.includes('LOG_DOSE') || botMsg.actionPayloadJson.includes('record_medication_dose')))
-        ) {
-          handleExecuteAiAction(botMsg.actionType || 'LOG_DOSE', botMsg.actionPayloadJson!);
-          botMsg.isActionConfirmed = true;
-        } else if (/\b(take|took|mark.*dose|record.*dose|log.*dose)\b/i.test(userText)) {
-          handleExecuteAiAction('LOG_DOSE', JSON.stringify({ type: 'record_medication_dose', action: 'TAKEN', medication_ids: ['all_due'] }));
-          botMsg.isActionConfirmed = true;
-        }
 
         PAIOSStorage.addAiMessage(botMsg);
         reloadState();
@@ -1062,27 +1047,104 @@ export const App: React.FC = () => {
     reloadState();
   };
 
-  // AI Action Execution
-  const handleExecuteAiAction = (actionType: string, actionPayloadJson: string) => {
+  // AI Action Execution via Deterministic Action Transaction Engine
+  const handleExecuteAiAction = async (actionType: string, actionPayloadJson: string) => {
     try {
       const payload = JSON.parse(actionPayloadJson);
+      const actions: ProposedAction[] = [];
+      const txId = `tx_ai_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const deviceId = typeof localStorage !== 'undefined' ? localStorage.getItem('paios_sync_device_id_v1') || 'device' : 'device';
+
       if (actionType === 'CREATE_TASKS' || payload.type === 'CREATE_TASKS') {
         const proposedTasks = Array.isArray(payload.tasks) ? payload.tasks.slice(0, 10) : [];
-        proposedTasks.forEach((task: any) => {
+        proposedTasks.forEach((task: any, idx: number) => {
           if (!task?.title || typeof task.title !== 'string') return;
-          PAIOSStorage.addTask(
-            task.title.trim(),
-            task.category || 'Personal',
-            task.priority === 'HIGH' || task.priority === 'CRITICAL' || Boolean(task.isPriority),
-            task.description || 'Added from an approved PAIOS AI proposal'
-          );
+          actions.push({
+            id: `act_${Date.now()}_${idx}`,
+            transactionId: txId,
+            type: 'CREATE_TASK',
+            payload: {
+              title: task.title.trim(),
+              category: task.category || 'Personal',
+              priority: (task.priority === 'HIGH' || task.priority === 'CRITICAL' || Boolean(task.isPriority)) ? 'HIGH' : 'NORMAL',
+              description: task.description || 'Added from an approved PAIOS AI proposal',
+            },
+            risk: 'LOW',
+            title: `Add task: "${task.title.trim()}"`,
+            explanation: 'Created from AI proposal',
+            sourceText: 'CREATE_TASKS',
+            affectedRecordIds: [],
+            expectedRevisions: {},
+            requiresConfirmation: false,
+            validationState: 'VALID',
+            createdAt: Date.now(),
+            originDeviceId: deviceId,
+          });
         });
-      } else if (actionType === 'ADD_TASK' || payload.type === 'ADD_TASK') {
-        PAIOSStorage.addTask(payload.title || 'AI Generated Task', payload.category || 'General', true, 'Added via PAIOS AI');
+      } else if (actionType === 'ADD_TASK' || payload.type === 'ADD_TASK' || actionType === 'create_task' || payload.type === 'create_task') {
+        const title = payload.title || 'AI Generated Task';
+        actions.push({
+          id: `act_${Date.now()}`,
+          transactionId: txId,
+          type: 'CREATE_TASK',
+          payload: {
+            title,
+            category: payload.category || 'General',
+            priority: (payload.priority === 'HIGH' || payload.priority === 'CRITICAL') ? 'HIGH' : 'NORMAL',
+            description: payload.description || 'Added via PAIOS AI',
+          },
+          risk: 'LOW',
+          title: `Add task: "${title}"`,
+          explanation: 'Created from AI proposal',
+          sourceText: 'ADD_TASK',
+          affectedRecordIds: [],
+          expectedRevisions: {},
+          requiresConfirmation: false,
+          validationState: 'VALID',
+          createdAt: Date.now(),
+          originDeviceId: deviceId,
+        });
       } else if (actionType === 'START_ACTIVITY' || payload.type === 'START_ACTIVITY') {
-        PAIOSStorage.startActivity(payload.name || 'AI Session', payload.category || 'Work', 'Started via PAIOS AI');
+        actions.push({
+          id: `act_${Date.now()}`,
+          transactionId: txId,
+          type: 'START_FOCUS_SESSION',
+          payload: {
+            name: payload.name || 'AI Session',
+            category: payload.category || 'Work',
+            note: 'Started via PAIOS AI',
+          },
+          risk: 'LOW',
+          title: `Start focus session: "${payload.name || 'AI Session'}"`,
+          explanation: 'Started from AI proposal',
+          sourceText: 'START_ACTIVITY',
+          affectedRecordIds: [],
+          expectedRevisions: {},
+          requiresConfirmation: false,
+          validationState: 'VALID',
+          createdAt: Date.now(),
+          originDeviceId: deviceId,
+        });
       } else if (actionType === 'SAVE_NOTE' || payload.type === 'SAVE_NOTE') {
-        PAIOSStorage.addQuickCaptureNote(payload.text || 'AI Note', 'Personal');
+        actions.push({
+          id: `act_${Date.now()}`,
+          transactionId: txId,
+          type: 'CREATE_QUICK_CAPTURE',
+          payload: {
+            text: payload.text || 'AI Note',
+            category: 'Personal',
+          },
+          risk: 'LOW',
+          title: `Capture note: "${(payload.text || 'Note').slice(0, 30)}"`,
+          explanation: 'Captured from AI proposal',
+          sourceText: 'SAVE_NOTE',
+          affectedRecordIds: [],
+          expectedRevisions: {},
+          requiresConfirmation: false,
+          validationState: 'VALID',
+          createdAt: Date.now(),
+          originDeviceId: deviceId,
+        });
       } else if (
         actionType === 'LOG_DOSE' ||
         payload.type === 'LOG_DOSE' ||
@@ -1100,55 +1162,58 @@ export const App: React.FC = () => {
         const actionStatus: DoseStatus = payload.action || payload.status || 'TAKEN';
         const noteText = payload.notes || 'Recorded via PAIOS AI Tool Execution';
 
-        if (
-          medIds.length === 0 ||
-          medIds.some((id) => ['all', 'all_due', 'all_scheduled', 'due', 'today'].includes(String(id).toLowerCase()))
-        ) {
-          // Mark all scheduled doses for today
-          doseList.forEach((d) => {
-            if (d.status === 'SCHEDULED') {
-              PAIOSStorage.logDoseEvent(d.id, actionStatus, noteText);
-            }
-          });
-        } else {
-          medIds.forEach((query) => {
-            const cleanQuery = String(query).toLowerCase().trim();
-            const matching = doseList.filter(
-              (d) =>
-                d.id.toLowerCase() === cleanQuery ||
-                d.medicationId.toLowerCase() === cleanQuery ||
-                d.medicationName.toLowerCase().includes(cleanQuery)
-            );
-            if (matching.length > 0) {
-              matching.forEach((d) => {
-                PAIOSStorage.logDoseEvent(d.id, actionStatus, noteText);
-              });
-            } else {
-              // If none matched yet by exact name, take first scheduled dose
-              const firstDue = doseList.find((d) => d.status === 'SCHEDULED');
-              if (firstDue) {
-                PAIOSStorage.logDoseEvent(firstDue.id, actionStatus, noteText);
-              }
-            }
+        let targetDose = doseList.find((d) => d.id === medIds[0] || d.medicationId === medIds[0]);
+        if (!targetDose && medIds[0] && medIds[0] !== 'all_due') {
+          targetDose = doseList.find((d) => d.medicationName.toLowerCase().includes(medIds[0].toLowerCase()));
+        }
+        if (!targetDose) {
+          targetDose = doseList.find((d) => d.status === 'SCHEDULED');
+        }
+
+        if (targetDose) {
+          actions.push({
+            id: `act_${Date.now()}`,
+            transactionId: txId,
+            type: 'RECORD_MEDICATION_EVENT',
+            payload: {
+              doseEventId: targetDose.id,
+              medicationId: targetDose.medicationId,
+              medicationName: targetDose.medicationName,
+              status: actionStatus === 'SKIPPED' ? 'SKIPPED' : 'TAKEN',
+              note: noteText,
+            },
+            risk: 'MEDIUM',
+            title: `Record ${targetDose.medicationName} as ${actionStatus}`,
+            explanation: 'Recorded via AI proposal',
+            sourceText: 'LOG_DOSE',
+            affectedRecordIds: [targetDose.id],
+            expectedRevisions: {},
+            requiresConfirmation: false,
+            validationState: 'VALID',
+            createdAt: Date.now(),
+            originDeviceId: deviceId,
           });
         }
       } else if (actionType === 'LOG_SYMPTOM' || payload.type === 'LOG_SYMPTOM') {
-        PAIOSStorage.logVitalSign({
-          symptoms: `${payload.symptomName || 'Symptom'} (Severity: ${payload.severity || 1}/10)`,
-          dizzinessSeverity: payload.symptomName?.toLowerCase().includes('dizz') ? payload.severity : undefined,
-        });
-      } else if (actionType === 'BOOK_APPOINTMENT' || payload.type === 'BOOK_APPOINTMENT') {
-        const doctors = PAIOSStorage.getDoctors();
-        const doc = doctors.find((d) => d.name.toLowerCase().includes((payload.doctorName || '').toLowerCase())) || doctors[0];
-        PAIOSStorage.bookAppointment({
-          doctorId: doc?.id || 'doc_1',
-          doctorName: doc?.name || 'Dr Devendra Ratnani',
-          scheduledTimeMillis: Date.now() + 86400000 * (payload.daysFromNow || 1),
-          scheduledDateString: payload.dateString || getTodayDateString(),
-          scheduledTimeString: payload.timeString || '10:00',
-          reason: payload.reason || 'AI Booked Consultation',
-          status: 'SCHEDULED',
-          notes: payload.notes || 'Booked via PAIOS AI Assistant',
+        actions.push({
+          id: `act_${Date.now()}`,
+          transactionId: txId,
+          type: 'RECORD_SYMPTOM',
+          payload: {
+            symptomName: payload.symptomName || 'Symptom',
+            severity: payload.severity || 1,
+            notes: 'Logged via AI Proposal',
+          },
+          risk: 'LOW',
+          title: `Record symptom: "${payload.symptomName || 'Symptom'}"`,
+          explanation: 'Recorded via AI proposal',
+          sourceText: 'LOG_SYMPTOM',
+          affectedRecordIds: [],
+          expectedRevisions: {},
+          requiresConfirmation: false,
+          validationState: 'VALID',
+          createdAt: Date.now(),
+          originDeviceId: deviceId,
         });
       } else if (
         actionType === 'LOG_TRANSACTION' ||
@@ -1156,27 +1221,37 @@ export const App: React.FC = () => {
         actionType === 'log_transaction' ||
         payload.type === 'log_transaction'
       ) {
-        PAIOSStorage.saveExpenseTransaction({
-          id: `tx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          title: payload.title || payload.description || 'Logged via AI',
-          amount: Number(payload.amount) || 0,
-          type: (payload.type === 'INFLOW' || payload.flowType === 'INFLOW') ? 'INFLOW' : 'OUTFLOW',
-          category: payload.category || 'Other',
-          dateString: payload.dateString || getTodayDateString(),
-          timestampMillis: payload.timestamp || Date.now(),
-          isNecessity: Boolean(payload.isNecessity ?? true),
-          notes: payload.notes || payload.note || 'AI Tool Execution',
-          provenance: 'AI_EXTRACTED',
+        const isInflow = payload.type === 'INFLOW' || payload.flowType === 'INFLOW';
+        actions.push({
+          id: `act_${Date.now()}`,
+          transactionId: txId,
+          type: isInflow ? 'RECORD_INCOME' : 'RECORD_EXPENSE',
+          payload: {
+            amount: Number(payload.amount) || 0,
+            title: payload.title || payload.description || 'Transaction',
+            category: payload.category || (isInflow ? 'OtherIncome' : 'Other'),
+          },
+          risk: 'MEDIUM',
+          title: `Record ${isInflow ? 'income' : 'expense'}: ₹${Number(payload.amount) || 0}`,
+          explanation: 'Recorded via AI proposal',
+          sourceText: 'LOG_TRANSACTION',
+          affectedRecordIds: [],
+          expectedRevisions: {},
+          requiresConfirmation: false,
+          validationState: 'VALID',
+          createdAt: Date.now(),
+          originDeviceId: deviceId,
         });
-      } else if (actionType === 'create_task' || payload.type === 'create_task') {
-        PAIOSStorage.addTask(
-          payload.title || 'AI Generated Task',
-          payload.category || 'Work',
-          payload.priority === 'HIGH' || payload.priority === 'CRITICAL',
-          payload.description || 'Added via PAIOS AI Tool'
-        );
       }
-      reloadState();
+
+      if (actions.length > 0) {
+        const tx = ActionTransactionManager.buildTransaction(actions, `AI Action: ${actionType}`);
+        const result = await ActionTransactionManager.executeTransaction(tx);
+        if (result.success) {
+          reloadState();
+          setUndoToastData({ transactionId: tx.id, summary: actions[0]?.title || 'AI Action completed' });
+        }
+      }
     } catch (e) {
       console.error('Failed to parse AI action payload:', e);
     }
@@ -1234,6 +1309,7 @@ export const App: React.FC = () => {
               onOpenCheckIn={() => setShowCheckInModal(true)}
               onOpenReview={() => setShowReviewModal(true)}
               onOpenSettings={() => setActiveTab(NavTab.SETTINGS)}
+              onOpenCommandBar={() => setShowCommandBar(true)}
             />
 
             <DesktopNavigation activeTab={activeTab} onSelectTab={setActiveTab} />
@@ -1430,6 +1506,7 @@ export const App: React.FC = () => {
       <MobileBottomNav
         activeTab={activeTab}
         onSelectTab={setActiveTab}
+        onOpenCommandBar={() => setShowCommandBar(true)}
       />
 
       {/* Modals */}
@@ -1546,6 +1623,25 @@ export const App: React.FC = () => {
         onClose={() => setShowUpdatePromptModal(false)}
         serverManifest={latestServerManifest}
       />
+
+      <UniversalCommandBar
+        isOpen={showCommandBar}
+        onClose={() => setShowCommandBar(false)}
+        onRefreshAppState={reloadState}
+        onShowUndoToast={(txId, summary) => setUndoToastData({ transactionId: txId, summary })}
+      />
+
+      {undoToastData && (
+        <UndoToast
+          transactionId={undoToastData.transactionId}
+          summary={undoToastData.summary}
+          onUndo={async (txId) => {
+            await ActionUndoManager.undoTransaction(txId);
+            reloadState();
+          }}
+          onDismiss={() => setUndoToastData(null)}
+        />
+      )}
     </div>
   );
 };

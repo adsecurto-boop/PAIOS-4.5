@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Sun, Moon, Settings, Cpu, LogOut, Bell, Compass, RefreshCw, Plus } from 'lucide-react';
+import { Search, Sun, Moon, Settings, Cpu, LogOut, Bell, Compass, RefreshCw, Plus, Zap } from 'lucide-react';
 import { CloudSyncBanner } from './CloudSyncBanner';
 import { AutoUpdateSyncBanner } from './AutoUpdateSyncBanner';
 import { PaiosUser } from '../firebase';
@@ -19,6 +19,7 @@ interface TopHeaderBarProps {
   onSyncComplete?: () => void;
   onOpenTour?: () => void;
   onOpenQuickAdd?: () => void;
+  onOpenCommandBar?: () => void;
 }
 
 export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
@@ -32,6 +33,7 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
   onSyncComplete,
   onOpenTour,
   onOpenQuickAdd,
+  onOpenCommandBar,
 }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isForceSyncing, setIsForceSyncing] = useState(false);
@@ -122,6 +124,21 @@ export const TopHeaderBar: React.FC<TopHeaderBarProps> = ({
                   {unreadCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {onOpenCommandBar && (
+            <button
+              onClick={onOpenCommandBar}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white transition-colors border border-indigo-500/30 shrink-0 min-h-[38px] text-xs font-medium"
+              title="Universal Action Command Bar (Ctrl+K)"
+              aria-label="Universal Action Command Bar"
+            >
+              <Zap className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden sm:inline">Command</span>
+              <kbd className="hidden md:inline-block px-1 py-0.2 rounded bg-slate-950/60 border border-slate-700 text-[10px] font-mono text-slate-400">
+                ⌘K
+              </kbd>
             </button>
           )}
 

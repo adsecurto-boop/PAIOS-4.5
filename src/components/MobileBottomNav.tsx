@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { BarChart2, Book, BookOpen, CheckSquare, Clock, HeartPulse, Layers, MoreHorizontal, Settings, Sparkles, Sun } from 'lucide-react';
+import { BarChart2, Book, BookOpen, CheckSquare, Clock, HeartPulse, Layers, MoreHorizontal, Settings, Sparkles, Sun, Zap } from 'lucide-react';
 import { NavTab } from '../types';
 
 interface MobileBottomNavProps {
   activeTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
+  onOpenCommandBar?: () => void;
 }
 
 const primaryTabs = [
@@ -23,7 +24,7 @@ const secondaryTabs = [
   { id: NavTab.SETTINGS, label: 'Settings', description: 'Account and preferences', icon: Settings },
 ];
 
-export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ activeTab, onSelectTab }) => {
+export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ activeTab, onSelectTab, onOpenCommandBar }) => {
   const [showMore, setShowMore] = useState(false);
   const isSecondaryActive = secondaryTabs.some((tab) => tab.id === activeTab);
   const select = (tab: NavTab) => {
@@ -38,6 +39,27 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ activeTab, onS
         {showMore && (
           <div className="absolute bottom-full left-3 right-3 mb-2 rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-2xl">
             <div className="mb-2 px-1"><p className="text-xs font-bold text-white">More from PAIOS</p><p className="text-[10px] text-slate-400">Open supporting areas when you need them.</p></div>
+
+            {onOpenCommandBar && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMore(false);
+                  onOpenCommandBar();
+                }}
+                className="w-full mb-2.5 flex items-center justify-between gap-2.5 rounded-xl border border-indigo-500/50 bg-indigo-950/60 p-2.5 text-left hover:border-indigo-400 transition-colors"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-600/40 text-indigo-300 flex items-center justify-center shrink-0">
+                    <Zap className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <span className="block text-xs font-bold text-white">Command Bar</span>
+                    <span className="block text-[10px] text-indigo-300/80">Execute actions, add tasks, record vitals</span>
+                  </div>
+                </div>
+              </button>
+            )}
             <div className="grid grid-cols-2 gap-2">
               {secondaryTabs.map((tab) => {
                 const Icon = tab.icon;

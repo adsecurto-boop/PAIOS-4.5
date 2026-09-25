@@ -153,7 +153,7 @@ function isSemVerGreaterMain(remote, current) {
     const userDistIndex = path.join(userDistDir, 'index.html');
     const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
     const activeVersionFile = path.join(app.getPath('userData'), 'active_version.json');
-    const currentVersion = app.getVersion() || '4.7.1';
+    const currentVersion = app.getVersion() || '4.8.0';
 
     // Development & Unpackaged Guard:
     // When running locally from workspace, ALWAYS prioritize compiled workspace dist.
@@ -329,7 +329,7 @@ ipcMain.handle('show-desktop-notification', async (event, data) => {
 
 // IPC Handlers for In-App Live Sync & Auto-Update Controls
 ipcMain.handle('paios:get-version', () => {
-  return app.getVersion() || '4.7.1';
+  return app.getVersion() || '4.8.0';
 });
 
 ipcMain.handle('paios:get-config', () => {
@@ -522,7 +522,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
     return { success: false, error: 'Updater disabled in development/workspace mode', updated: false };
   }
 
-  const currentAppVersion = app.getVersion() || '4.7.1';
+  const currentAppVersion = app.getVersion() || '4.8.0';
   if (!isSemVerGreaterMain(version, currentAppVersion)) {
     console.warn(`[PAIOS Updater] Blocked: Target version (${version}) is not strictly newer than current (${currentAppVersion}).`);
     return { success: false, error: 'Downgrade or duplicate version blocked by SemVer policy', updated: false };
@@ -604,7 +604,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
       fs.writeFileSync(
         path.join(app.getPath('userData'), 'active_version.json'),
         JSON.stringify({
-          version: version || '4.7.1',
+          version: version || '4.8.0',
           gitCommit: gitCommit || 'latest',
           appliedAt: Date.now(),
           sourcePackage: zipToApply,

@@ -1,7 +1,7 @@
 {
   "name": "paios-desktop",
   "private": true,
-  "version": "4.7.1",
+  "version": "4.8.0",
   "description": "PAIOS - your focused daily planning and productivity app",
   "author": "PAIOS Team",
   "type": "module",

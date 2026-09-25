@@ -466,11 +466,11 @@ app.post("/assistant/test", requireAuth, async (req, res) => {
   }
 });
 var dynamicVersionManifest = {
-  version: "4.7.1",
-  buildNumber: "11",
+  version: "4.8.0",
+  buildNumber: "12",
   buildTimestamp: Date.now(),
   gitCommit: "c3249c0",
-  releaseNotes: "PAIOS v4.7.1: Adaptive Today lanes and record-level cross-device sync",
+  releaseNotes: "PAIOS v4.8.0: Safety-first Universal Action Assistant",
   platforms: {
     windows: {
       url: "https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip",
