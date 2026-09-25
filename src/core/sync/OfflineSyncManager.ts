@@ -135,9 +135,11 @@ export class OfflineSyncManager {
           failureCount++;
           console.warn(`[OfflineSyncManager] Push failed for key ${item.key}:`, err);
           item.retryCount = (item.retryCount || 0) + 1;
-          if (item.retryCount < 10) {
-            remainingQueue.push(item);
-          }
+          // Local storage remains the source of truth, but the mutation must also
+          // stay queued until the server accepts it. Dropping it after an
+          // arbitrary retry limit left the UI in an error state with an empty
+          // queue and made the Retry action impossible to complete.
+          remainingQueue.push(item);
         }
       }
 
@@ -149,7 +151,7 @@ export class OfflineSyncManager {
         message: failureCount > 0 ? `${failureCount} change${failureCount === 1 ? '' : 's'} could not sync` : undefined,
       });
       return {
-        success: true,
+        success: failureCount === 0,
         processed: processedCount,
         remaining: remainingQueue.length,
       };

@@ -467,12 +467,12 @@ if (typeof window !== 'undefined') {
 }
 
 // Push local data snapshot to Firestore
-export async function syncLocalToCloud(userId: string): Promise<void> {
-  if (isApplyingRemoteUpdate || !userId) return;
+export async function syncLocalToCloud(userId: string): Promise<boolean> {
+  if (isApplyingRemoteUpdate || !userId) return false;
   if (pendingSyncConflict) {
     if (typeof window !== 'undefined') window.dispatchEvent(new Event('paios_sync_conflict'));
     emitSyncStatus('error', 'Review changes from another device');
-    return;
+    return false;
   }
   try {
     emitSyncStatus('syncing');
@@ -486,6 +486,7 @@ export async function syncLocalToCloud(userId: string): Promise<void> {
     }, { merge: true });
     hasPendingLocalChanges = false;
     emitSyncStatus('synced', undefined, Date.now());
+    return true;
   } catch (err: any) {
     console.error('Firestore sync write error:', err);
     emitSyncStatus('error', err?.message || 'Cloud sync failed');
@@ -495,6 +496,7 @@ export async function syncLocalToCloud(userId: string): Promise<void> {
         window.dispatchEvent(new Event('paios_quota_exceeded'));
       }
     }
+    return false;
   }
 }
 

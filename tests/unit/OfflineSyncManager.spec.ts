@@ -93,10 +93,27 @@ describe('Unit Test: OfflineSyncManager FIFO Buffer & Reconnection', () => {
     const result = await OfflineSyncManager.flushQueue();
 
     expect(result.processed).toBe(0);
+    expect(result.success).toBe(false);
     expect(result.remaining).toBe(1);
 
     const queue = OfflineSyncManager.getQueue();
     expect(queue[0].retryCount).toBe(1);
+  });
+
+  it('never discards a failed local mutation after repeated retries', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
+    vi.spyOn(AuthSyncService, 'getToken').mockReturnValue('mock_jwt_token');
+    vi.spyOn(AuthSyncService, 'pushData').mockRejectedValue(new Error('Push Failed'));
+
+    OfflineSyncManager.enqueueMutation('persistent_key', { important: true });
+    vi.stubGlobal('navigator', { onLine: true });
+    for (let attempt = 0; attempt < 11; attempt++) {
+      await OfflineSyncManager.flushQueue();
+    }
+
+    const queue = OfflineSyncManager.getQueue();
+    expect(queue).toHaveLength(1);
+    expect(queue[0].retryCount).toBe(11);
   });
 
   it('publishes syncing and synced lifecycle events around a successful flush', async () => {
