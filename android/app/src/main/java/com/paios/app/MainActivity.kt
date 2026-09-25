@@ -14,6 +14,7 @@ class MainActivity : BridgeActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.i(TAG, "PAIOS MainActivity launching...")
+        registerPlugin(PaiosAppUpdaterPlugin::class.java)
         super.onCreate(savedInstanceState)
 
         try {

@@ -22,6 +22,11 @@ const electronAPI = {
   reload: () => ipcRenderer.invoke('paios:reload'),
   downloadUpdate: (params) => ipcRenderer.invoke('paios:download-update', params),
   applyUpdate: (params) => ipcRenderer.invoke('paios:apply-update', params),
+  onUpdateDownloadProgress: (callback) => {
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on('paios:update-download-progress', listener);
+    return () => ipcRenderer.removeListener('paios:update-download-progress', listener);
+  },
   openExternal: (url) => ipcRenderer.invoke('paios:open-external', url),
 };
 

@@ -66,6 +66,30 @@ function isValidProductionDist(dirPath) {
 function createWindow() {
   const config = loadConfig();
 
+  // A portable Windows build cannot replace its running executable. The old
+  // launcher therefore forwards future starts to the verified staged binary.
+  if (app.isPackaged && process.platform === 'win32') {
+    try {
+      const activeVersionFile = path.join(app.getPath('userData'), 'active_version.json');
+      const allowedRoot = fs.realpathSync(path.join(app.getPath('userData'), 'updates'));
+      if (fs.existsSync(activeVersionFile)) {
+        const active = JSON.parse(fs.readFileSync(activeVersionFile, 'utf8'));
+        const staged = active.stagedExecutable;
+        if (staged && fs.existsSync(staged) && isSemVerGreaterMain(active.version, app.getVersion())) {
+          const resolved = fs.realpathSync(staged);
+          const relative = path.relative(allowedRoot, resolved);
+          if (!relative.startsWith('..') && !path.isAbsolute(relative) && resolved.toLowerCase() !== process.execPath.toLowerCase()) {
+            require('child_process').spawn(resolved, [], { detached: true, stdio: 'ignore' }).unref();
+            app.exit(0);
+            return;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[PAIOS Updater] Staged launcher validation failed:', error);
+    }
+  }
+
   // Configure Content Security Policy to permit HTTP & WebSocket traffic to local & production API endpoints
   if (session && session.defaultSession) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -85,7 +109,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'PAIOS Desktop - Personal AI Operating System',
+    title: 'PAIOS',
     frame: true,
     titleBarStyle: 'default',
     autoHideMenuBar: false,
@@ -129,7 +153,7 @@ function isSemVerGreaterMain(remote, current) {
     const userDistIndex = path.join(userDistDir, 'index.html');
     const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
     const activeVersionFile = path.join(app.getPath('userData'), 'active_version.json');
-    const currentVersion = app.getVersion() || '4.6.1';
+    const currentVersion = app.getVersion() || '4.7.0';
 
     // Development & Unpackaged Guard:
     // When running locally from workspace, ALWAYS prioritize compiled workspace dist.
@@ -305,7 +329,7 @@ ipcMain.handle('show-desktop-notification', async (event, data) => {
 
 // IPC Handlers for In-App Live Sync & Auto-Update Controls
 ipcMain.handle('paios:get-version', () => {
-  return app.getVersion() || '4.6.1';
+  return app.getVersion() || '4.7.0';
 });
 
 ipcMain.handle('paios:get-config', () => {
@@ -354,8 +378,11 @@ ipcMain.handle('paios:download-update', async (event, { url, fallbackUrls = [], 
 
       function fetchWithRedirects(targetUrl) {
         try {
-          if (!String(targetUrl).startsWith('https://')) return tryDownloadNext();
-          const client = require('https');
+          const parsedUrl = new URL(targetUrl);
+          const isSecure = parsedUrl.protocol === 'https:';
+          const isLoopback = parsedUrl.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(parsedUrl.hostname);
+          if (!isSecure && !isLoopback) return tryDownloadNext();
+          const client = require(isSecure ? 'https' : 'http');
           client.get(targetUrl, { headers: { 'User-Agent': 'PAIOS-Desktop-Updater' } }, (res) => {
             // Follow HTTP redirects
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -463,6 +490,22 @@ function findDistFolder(dirPath, maxDepth = 5) {
   return null;
 }
 
+function findExecutable(dirPath, maxDepth = 5) {
+  if (maxDepth <= 0 || !fs.existsSync(dirPath)) return null;
+  try {
+    const items = fs.readdirSync(dirPath, { withFileTypes: true });
+    const executable = items.find((item) => item.isFile() && item.name.toLowerCase().endsWith('.exe'));
+    if (executable) return path.join(dirPath, executable.name);
+    for (const item of items) {
+      if (item.isDirectory()) {
+        const found = findExecutable(path.join(dirPath, item.name), maxDepth - 1);
+        if (found) return found;
+      }
+    }
+  } catch (error) {}
+  return null;
+}
+
 // IPC Handler: Get userData Path
 ipcMain.handle('paios:get-user-data-path', async () => {
   return app.getPath('userData');
@@ -479,7 +522,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
     return { success: false, error: 'Updater disabled in development/workspace mode', updated: false };
   }
 
-  const currentAppVersion = app.getVersion() || '4.6.1';
+  const currentAppVersion = app.getVersion() || '4.7.0';
   if (!isSemVerGreaterMain(version, currentAppVersion)) {
     console.warn(`[PAIOS Updater] Blocked: Target version (${version}) is not strictly newer than current (${currentAppVersion}).`);
     return { success: false, error: 'Downgrade or duplicate version blocked by SemVer policy', updated: false };
@@ -519,6 +562,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
   }
 
   let extractedSuccessfully = false;
+  let stagedExecutable = null;
 
   if (zipToApply && fs.existsSync(zipToApply)) {
     const actualHash = crypto.createHash('sha256').update(fs.readFileSync(zipToApply)).digest('hex');
@@ -542,61 +586,56 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
         }
         fs.cpSync(sourceDistDir, userDistDir, { recursive: true, force: true });
 
-        const activeManifest = {
-          version: version || '4.6.1',
-          gitCommit: gitCommit || 'latest',
-          appliedAt: Date.now(),
-          sourcePackage: zipToApply,
-        };
-        fs.writeFileSync(
-          path.join(app.getPath('userData'), 'active_version.json'),
-          JSON.stringify(activeManifest, null, 2),
-          'utf8'
-        );
         extractedSuccessfully = true;
       } else {
         console.warn('[PAIOS Updater] Archive did not contain a valid compiled production web build.');
       }
 
       // Check if full .exe is present
-      const files = fs.readdirSync(tempExtractDir);
-      const exeFile = files.find((f) => f.toLowerCase().endsWith('.exe'));
-      if (exeFile) {
+      const extractedExecutable = findExecutable(tempExtractDir);
+      if (extractedExecutable) {
         const permanentExeDir = path.join(updatesDir, 'latest_app');
-        if (!fs.existsSync(permanentExeDir)) {
-          fs.mkdirSync(permanentExeDir, { recursive: true });
-        }
+        if (fs.existsSync(permanentExeDir)) fs.rmSync(permanentExeDir, { recursive: true, force: true });
+        fs.mkdirSync(permanentExeDir, { recursive: true });
         fs.cpSync(tempExtractDir, permanentExeDir, { recursive: true, force: true });
-        require('electron').shell.showItemInFolder(path.join(permanentExeDir, exeFile));
+        stagedExecutable = findExecutable(permanentExeDir);
       }
+
+      fs.writeFileSync(
+        path.join(app.getPath('userData'), 'active_version.json'),
+        JSON.stringify({
+          version: version || '4.7.0',
+          gitCommit: gitCommit || 'latest',
+          appliedAt: Date.now(),
+          sourcePackage: zipToApply,
+          stagedExecutable,
+        }, null, 2),
+        'utf8'
+      );
     } catch (err) {
       console.error('[PAIOS Updater] Error during extraction and live asset update:', err);
     }
   }
 
-  // Reload window with verified assets
-  const updatedIndexHtml = path.join(userDistDir, 'index.html');
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.webContents?.session) {
-      await mainWindow.webContents.session.clearCache();
-    }
-    if (fs.existsSync(updatedIndexHtml) && isValidProductionDist(userDistDir)) {
-      console.log('[PAIOS Updater] Live reloading with updated assets from:', updatedIndexHtml);
-      await mainWindow.loadFile(updatedIndexHtml);
-      return { success: true, updated: true };
-    } else {
-      console.log('[PAIOS Updater] Reloading with standard bundled distribution...');
-      const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
-      if (fs.existsSync(bundledDistIndex)) {
-        await mainWindow.loadFile(bundledDistIndex);
-      } else {
-        mainWindow.reload();
-      }
-      return { success: true, updated: false };
-    }
+  if (!extractedSuccessfully) {
+    return { success: false, error: 'The update package did not contain a valid PAIOS application build.', updated: false };
   }
 
-  return { success: true, updated: extractedSuccessfully };
+  // Relaunch into the verified staged build. A real process restart releases
+  // old renderer resources and makes the update boundary clear to the user.
+  const updatedIndexHtml = path.join(userDistDir, 'index.html');
+  if (!fs.existsSync(updatedIndexHtml) || !isValidProductionDist(userDistDir)) {
+    return { success: false, error: 'Staged update validation failed.', updated: false };
+  }
+  console.log('[PAIOS Updater] Update staged. Restarting application.');
+  if (stagedExecutable && fs.existsSync(stagedExecutable)) {
+    require('child_process').spawn(stagedExecutable, [], { detached: true, stdio: 'ignore' }).unref();
+    app.exit(0);
+    return { success: true, updated: true, restarting: true };
+  }
+  app.relaunch();
+  app.exit(0);
+  return { success: true, updated: true, restarting: true };
 });
 
 // IPC Handler: Open External Browser Link

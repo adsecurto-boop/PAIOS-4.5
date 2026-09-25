@@ -1,8 +1,8 @@
 {
   "name": "paios-desktop",
   "private": true,
-  "version": "4.6.1",
-  "description": "PAIOS Desktop - Personal AI Operating System",
+  "version": "4.7.0",
+  "description": "PAIOS - your focused daily planning and productivity app",
   "author": "PAIOS Team",
   "type": "module",
   "main": "electron-main.cjs",

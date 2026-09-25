@@ -57,11 +57,10 @@ import { getTomorrowNoon, preserveCompletedBlocks } from './utils/dailyCommandCe
 import { classifyCapture, tomorrowMorningMillis } from './utils/captureClassifier';
 import { getWeekStart, toLocalDateString } from './utils/weeklyReview';
 
-import { WindowsTitleBar } from './components/WindowsTitleBar';
-import { WindowsTaskBar } from './components/WindowsTaskBar';
 import { DesktopAppExportModal } from './components/DesktopAppExportModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { QuickAddMenu } from './components/QuickAddMenu';
+import { DesktopNavigation } from './components/DesktopNavigation';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>(NavTab.AI);
@@ -81,9 +80,6 @@ export const App: React.FC = () => {
     return false;
   });
 
-  // Desktop Window Controls State
-  const [isMaximized, setIsMaximized] = useState(true);
-  const [isMinimized, setIsMinimized] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
 
   // Storage State
@@ -144,7 +140,6 @@ export const App: React.FC = () => {
     const handleRoute = (event: Event) => {
       const route = (event as CustomEvent<NotificationRoute>).detail;
       if (!route) return;
-      setIsMinimized(false);
       setShowNotificationModal(false);
       if (route.screen === 'CHECKIN') setShowCheckInModal(true);
       else if (route.screen === 'REVIEW') setShowReviewModal(true);
@@ -1221,47 +1216,8 @@ export const App: React.FC = () => {
 
   return (
     <div className="android-app-shell min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white overflow-x-hidden w-full max-w-full safe-area-left safe-area-right">
-      {/* Windows 11 Desktop Title Bar */}
-      <WindowsTitleBar
-        isMaximized={isMaximized}
-        isMinimized={isMinimized}
-        onMinimize={() => setIsMinimized(true)}
-        onMaximizeToggle={() => setIsMaximized(!isMaximized)}
-        onClose={() => {
-          if (confirm('Minimize PAIOS Desktop to System Tray?')) {
-            setIsMinimized(true);
-          }
-        }}
-        onOpenSearch={() => {
-          handleSearch('');
-          setShowSearchModal(true);
-        }}
-        onOpenSettings={() => setActiveTab(NavTab.SETTINGS)}
-        onNewTask={() => setShowTaskModal(true)}
-        onNewCapture={() => setShowQuickCaptureModal(true)}
-        onExportDesktopApp={() => setShowExportModal(true)}
-      />
-
-      {/* Main Desktop Window Frame */}
-      {isMinimized ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400 bg-slate-950/90">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-950/60 border border-indigo-800/60 flex items-center justify-center text-indigo-400 mb-4 animate-bounce">
-            <Cpu className="w-8 h-8" />
-          </div>
-          <h3 className="text-lg font-bold text-slate-200">PAIOS Running in System Tray</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm">
-            PAIOS Desktop is active in the background. Click the taskbar app icon below to restore the application window.
-          </p>
-          <button
-            onClick={() => setIsMinimized(false)}
-            className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all"
-          >
-            Restore Window
-          </button>
-        </div>
-      ) : (
-        <div className={`flex-1 flex flex-col transition-all duration-200 ${!isMaximized ? 'p-2 sm:p-4 max-w-7xl mx-auto w-full' : 'w-full'}`}>
-          <div className={`flex-1 flex flex-col bg-slate-950 ${!isMaximized ? 'rounded-2xl border border-slate-800/80 shadow-2xl overflow-hidden' : ''}`}>
+      <div className="flex-1 flex flex-col w-full">
+          <div className="flex-1 flex flex-col bg-slate-950">
             {/* Top Header Bar */}
             <TopHeaderBar
               userName={currentUser.displayName || settings.userName || 'PAIOS User'}
@@ -1279,6 +1235,8 @@ export const App: React.FC = () => {
               onOpenReview={() => setShowReviewModal(true)}
               onOpenSettings={() => setActiveTab(NavTab.SETTINGS)}
             />
+
+            <DesktopNavigation activeTab={activeTab} onSelectTab={setActiveTab} />
 
             {/* Main Content Area */}
             <main className="android-main flex-1 min-h-0 max-w-6xl w-full mx-auto p-3 sm:p-6 pb-28 md:pb-20 overflow-x-hidden">
@@ -1443,7 +1401,6 @@ export const App: React.FC = () => {
             </main>
           </div>
         </div>
-      )}
 
       {/* Persistent Floating Mini Timer Player */}
       {activeActivity && activeTab !== NavTab.TODAY && (
@@ -1472,31 +1429,7 @@ export const App: React.FC = () => {
       {/* Mobile Bottom Navigation Dock */}
       <MobileBottomNav
         activeTab={activeTab}
-        onSelectTab={(tab) => {
-          setIsMinimized(false);
-          setActiveTab(tab);
-        }}
-      />
-
-      {/* Windows 11 Bottom Taskbar */}
-      <WindowsTaskBar
-        activeTab={activeTab}
-        onTabChange={(tab) => {
-          setIsMinimized(false);
-          setActiveTab(tab);
-        }}
-        activeActivity={activeActivity}
-        elapsedSeconds={elapsedTimerSeconds}
-        onPauseActivity={() => activeActivity && handlePauseActivity(activeActivity.id)}
-        onResumeActivity={() => activeActivity && handleResumeActivity(activeActivity.id)}
-        onFinishActivity={() => activeActivity && handleFinishActivity(activeActivity.id)}
-        onOpenSearch={() => {
-          handleSearch('');
-          setShowSearchModal(true);
-        }}
-        onOpenExportModal={() => setShowExportModal(true)}
-        isMinimized={isMinimized}
-        onRestoreFromTaskbar={() => setIsMinimized(false)}
+        onSelectTab={setActiveTab}
       />
 
       {/* Modals */}

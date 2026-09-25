@@ -1,6 +1,16 @@
 // PAIOS Cross-Platform In-App Update Service
 // Supports Windows Desktop (Electron), Android (Capacitor APK installer), and Web (OTA/SW)
 
+import { registerPlugin } from '@capacitor/core';
+
+interface NativeAppUpdaterPlugin {
+  downloadApk(options: { url: string; version: string; sha256?: string }): Promise<{ filePath: string; sizeBytes: number }>;
+  installDownloadedApk(options: { filePath: string }): Promise<void>;
+  addListener(eventName: 'downloadProgress', listener: (progress: DownloadProgress) => void): Promise<{ remove: () => Promise<void> }>;
+}
+
+const NativeAppUpdater = registerPlugin<NativeAppUpdaterPlugin>('PaiosAppUpdater');
+
 declare const __APP_VERSION__: string | undefined;
 declare const __GIT_COMMIT__: string | undefined;
 declare const __BUILD_TIMESTAMP__: number | undefined;
@@ -110,7 +120,7 @@ const getStoredActiveVersion = (): string | null => {
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem('paios_active_version');
-      const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.6.1';
+      const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.7.0';
       // Never honor a stored version if it is older than or equal to the compiled code version!
       if (stored && isSemVerGreater(stored, compiled)) {
         return stored;
@@ -126,11 +136,11 @@ const getStoredActiveVersion = (): string | null => {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.6.1'),
-  buildNumber: '9',
+  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.7.0'),
+  buildNumber: '10',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
   gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'c3249c0'),
-  releaseNotes: 'PAIOS v4.6.1: Balance Sheet Cashflow Routing, Savings Pots Isolation, Downgrade Protection & Net Worth Integrity',
+  releaseNotes: 'PAIOS v4.7.0: Reliable native updates and a focused application interface',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
@@ -316,6 +326,21 @@ export class UpdateService {
       }
     }
 
+    // Native releases are accepted only when the manifest can authenticate the
+    // package. An incomplete checked-in manifest must not mask a complete
+    // Jenkins/release manifest later in the fallback chain.
+    if (fetchedManifest) {
+      const platform = getRunningPlatform();
+      const nativeAsset = platform === 'electron'
+        ? fetchedManifest.platforms?.windows
+        : platform === 'android'
+          ? fetchedManifest.platforms?.android
+          : null;
+      if (nativeAsset && !/^[a-f0-9]{64}$/i.test(String(nativeAsset.sha256 || ''))) {
+        fetchedManifest = null;
+      }
+    }
+
     // 3. Fetch latest GitHub Commits Atom Feed for real-time commit metadata
     latestCommitInfo = await this.fetchLatestGitHubCommit();
 
@@ -345,7 +370,7 @@ export class UpdateService {
     }
 
     // Compose final remote manifest
-    const targetVersion = fetchedManifest?.version || current.version || '4.6.1';
+    const targetVersion = fetchedManifest?.version || current.version || '4.7.0';
     const targetCommit =
       latestCommitInfo?.shortSha ||
       fetchedManifest?.gitCommit ||
@@ -353,7 +378,7 @@ export class UpdateService {
 
     const manifest: VersionManifest = {
       version: targetVersion,
-      buildNumber: fetchedManifest?.buildNumber || 9,
+      buildNumber: fetchedManifest?.buildNumber || 10,
       buildTimestamp:
         latestCommitInfo?.date
           ? new Date(latestCommitInfo.date).getTime()
@@ -365,7 +390,7 @@ export class UpdateService {
       releaseNotes:
         latestCommitInfo?.title ||
         fetchedManifest?.releaseNotes ||
-        'PAIOS v4.6.1: Balance Sheet Cashflow Routing, Savings Pots Isolation, Downgrade Protection & Net Worth Integrity',
+        'PAIOS v4.7.0: Reliable native updates and a focused application interface',
       platforms: {
         windows: {
           url:
@@ -373,6 +398,8 @@ export class UpdateService {
             'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/PAIOS-Desktop-Windows-x64.zip',
           filename: 'PAIOS-Desktop-Windows-x64.zip',
           version: targetVersion,
+          sizeBytes: fetchedManifest?.platforms?.windows?.sizeBytes,
+          sha256: fetchedManifest?.platforms?.windows?.sha256,
         },
         android: {
           url:
@@ -380,6 +407,8 @@ export class UpdateService {
             'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk',
           filename: 'app-release.apk',
           version: targetVersion,
+          sizeBytes: fetchedManifest?.platforms?.android?.sizeBytes,
+          sha256: fetchedManifest?.platforms?.android?.sha256,
         },
       },
     };
@@ -387,11 +416,11 @@ export class UpdateService {
     this.cachedManifest = manifest;
 
     const runningCommit = (getStoredActiveCommit() || current.gitCommit || '').trim();
-    const runningVersion = (getStoredActiveVersion() || current.version || '4.6.1').trim();
+    const runningVersion = (getStoredActiveVersion() || current.version || '4.7.0').trim();
 
     // STRICT SEMVER GATING:
-    // Only prompt to update if targetVersion is STRICTLY GREATER than runningVersion (e.g. 4.6.2 > 4.6.1).
-    // NEVER prompt to update if remote version <= running version (e.g. 4.5.7 <= 4.6.1).
+    // Only prompt when the published semantic version is strictly newer.
+    // Commit hash differences alone never trigger an update prompt.
     // Commit hash differences alone MUST NEVER trigger an update prompt!
     const isStrictlyNewerVersion = Boolean(targetVersion && isSemVerGreater(targetVersion, runningVersion));
     const updateAvailable = isStrictlyNewerVersion;
@@ -436,6 +465,9 @@ export class UpdateService {
         }
         if (electronAPI?.downloadUpdate) {
           return new Promise((resolve, reject) => {
+            const removeProgressListener = electronAPI.onUpdateDownloadProgress?.((progress: DownloadProgress) => {
+              onProgress(progress);
+            });
             // Candidate URLs for Electron download
             const candidateUrls = [
               manifest.platforms?.windows?.url,
@@ -449,6 +481,7 @@ export class UpdateService {
                 sha256,
               })
               .then((resultPath: string) => {
+                removeProgressListener?.();
                 onProgress({
                   percent: 100,
                   transferredBytes: 100,
@@ -458,6 +491,7 @@ export class UpdateService {
                 resolve(resultPath);
               })
               .catch((err: any) => {
+                removeProgressListener?.();
                 onProgress({
                   percent: 0,
                   transferredBytes: 0,
@@ -474,7 +508,29 @@ export class UpdateService {
       }
     }
 
-    // 2. Android & Web Candidate URLs
+    // 2. Native Android flow: keep the APK in app-private cache, verify it in
+    // native code, and hand it to Android's package installer on user request.
+    if (platform === 'android' && (window as any).Capacitor?.isNativePlatform?.()) {
+      const asset = manifest.platforms?.android;
+      if (!asset?.url) throw new Error('Android update URL is missing');
+      if (!/^[a-f0-9]{64}$/i.test(String(asset.sha256 || ''))) {
+        throw new Error('This Android update has no valid SHA-256 checksum and was blocked.');
+      }
+      const progressListener = await NativeAppUpdater.addListener('downloadProgress', onProgress);
+      try {
+        const result = await NativeAppUpdater.downloadApk({
+          url: asset.url,
+          version: manifest.version,
+          sha256: asset.sha256,
+        });
+        onProgress({ percent: 100, transferredBytes: result.sizeBytes, totalBytes: result.sizeBytes, status: 'ready' });
+        return result.filePath;
+      } finally {
+        await progressListener.remove();
+      }
+    }
+
+    // 3. Browser fallback for Android and web.
     const candidateUrls =
       platform === 'android'
         ? [
@@ -602,18 +658,6 @@ export class UpdateService {
   ): Promise<void> {
     const platform = getRunningPlatform();
 
-    if (typeof window !== 'undefined' && manifest) {
-      try {
-        const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.6.1';
-        if (manifest.version && isSemVerGreater(manifest.version, compiled)) {
-          localStorage.setItem('paios_active_version', manifest.version);
-          if (manifest.gitCommit) {
-            localStorage.setItem('paios_active_git_commit', manifest.gitCommit);
-          }
-        }
-      } catch (e) {}
-    }
-
     // 1. Electron Platform Install / Reveal
     if (platform === 'electron') {
       try {
@@ -626,13 +670,14 @@ export class UpdateService {
             bufferArray = Array.from(new Uint8Array(ab));
           }
 
-          await electronAPI.applyUpdate({
+          const result = await electronAPI.applyUpdate({
             version: manifest.version,
             gitCommit: manifest.gitCommit,
             filePath: typeof downloadedData === 'string' ? downloadedData : undefined,
             fileBuffer: bufferArray,
             sha256,
           });
+          if (result?.success === false) throw new Error(result.error || 'Windows update could not be applied');
           return;
         }
       } catch (err) {
@@ -642,6 +687,10 @@ export class UpdateService {
 
     // 2. Android APK Installation Trigger
     if (platform === 'android') {
+      if (typeof downloadedData === 'string' && (window as any).Capacitor?.isNativePlatform?.()) {
+        await NativeAppUpdater.installDownloadedApk({ filePath: downloadedData });
+        return;
+      }
       const filename = manifest.platforms?.android?.filename || `PAIOS-v${manifest.version}.apk`;
       const apkDownloadUrl =
         manifest.platforms?.android?.url ||

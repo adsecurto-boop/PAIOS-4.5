@@ -410,11 +410,11 @@ app.post('/assistant/test', requireAuth, async (req, res) => {
 
 // --- IN-APP SOFTWARE UPDATE & VERSION ENDPOINTS ---
 const dynamicVersionManifest: any = {
-  version: '4.6.1',
-  buildNumber: '9',
+  version: '4.7.0',
+  buildNumber: '10',
   buildTimestamp: Date.now(),
   gitCommit: 'c3249c0',
-  releaseNotes: 'PAIOS v4.6.1: Balance Sheet Cashflow Routing, Savings Pots Isolation, Downgrade Protection & Net Worth Integrity',
+  releaseNotes: 'PAIOS v4.7.0: Reliable native updates and a focused application interface',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',

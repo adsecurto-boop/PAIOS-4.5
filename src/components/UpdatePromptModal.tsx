@@ -34,6 +34,14 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
   onClose,
   serverManifest,
 }) => {
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress>({
+    percent: 0,
+    transferredBytes: 0,
+    totalBytes: 0,
+    status: 'idle',
+  });
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [downloadedData, setDownloadedData] = useState<Blob | string | null>(null);
   const runningVersion =
     (typeof window !== 'undefined' ? localStorage.getItem('paios_active_version') : null) ||
     CURRENT_CLIENT_VERSION.version;
@@ -48,16 +56,12 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
     return null;
   }
 
-  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress>({
-    percent: 0,
-    transferredBytes: 0,
-    totalBytes: 0,
-    status: 'idle',
-  });
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [downloadedData, setDownloadedData] = useState<Blob | string | null>(null);
-
   const platform = getRunningPlatform();
+
+  const handleDismiss = () => {
+    if (downloadProgress.status === 'downloading') UpdateService.cancelDownload();
+    onClose();
+  };
 
   const handleStartDownload = async () => {
     setIsProcessing(true);
@@ -84,11 +88,18 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
 
   const handleInstallNow = async () => {
     setIsProcessing(true);
+    setDownloadProgress((current) => ({ ...current, status: 'installing' }));
     try {
       await UpdateService.installUpdate(serverManifest, downloadedData);
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error('[UpdatePromptModal] Install update failed:', err);
+      const message = err?.message || 'The update could not be installed.';
+      setDownloadProgress((current) => ({
+        ...current,
+        status: message.startsWith('Allow PAIOS') ? 'ready' : 'error',
+        error: message,
+      }));
     } finally {
       setIsProcessing(false);
     }
@@ -144,7 +155,7 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleDismiss}
             className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             title="Dismiss Update Prompt"
           >
@@ -250,7 +261,7 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
         )}
 
         {/* Download Error Notice */}
-        {downloadProgress.status === 'error' && (
+        {downloadProgress.error && (
           <div className="p-3 bg-rose-950/60 border border-rose-600/50 rounded-xl text-xs text-rose-200 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
             <span>{downloadProgress.error || 'Failed to download update. Please try again.'}</span>
@@ -271,13 +282,13 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
         <div className="flex items-center justify-end gap-2.5 relative z-10 pt-1">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleDismiss}
             className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition-colors"
           >
             Remind Me Later
           </button>
 
-          {downloadProgress.status === 'ready' ? (
+          {downloadProgress.status === 'ready' || downloadProgress.status === 'installing' ? (
             <button
               type="button"
               onClick={handleInstallNow}
@@ -285,7 +296,7 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/40 transition-all animate-pulse"
             >
               <CheckCircle2 className="w-4 h-4 text-white" />
-              <span>{platform === 'android' ? 'Install APK Now' : 'Apply & Restart'}</span>
+              <span>{isProcessing ? 'Preparing restart…' : platform === 'android' ? 'Install & restart' : 'Restart & update'}</span>
             </button>
           ) : (
             <button
