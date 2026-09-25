@@ -32,6 +32,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
           <button
             onClick={onDismiss}
             className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close task modal"
           >
             <X className="w-5 h-5" />
           </button>
@@ -39,10 +40,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+            <label htmlFor="task-title-input" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
               Task Title *
             </label>
             <input
+              id="task-title-input"
               type="text"
               required
               autoFocus
@@ -63,6 +65,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
                   key={cat}
                   type="button"
                   onClick={() => setCategory(cat)}
+                  aria-pressed={category === cat}
                   className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                     category === cat
                       ? 'bg-indigo-600 text-white font-semibold'
@@ -79,6 +82,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
             <button
               type="button"
               onClick={() => setIsPriority(!isPriority)}
+              aria-label="Pin task to priority list"
+              aria-pressed={isPriority}
               className={`p-2 rounded-lg transition-colors ${
                 isPriority ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800 text-slate-400'
               }`}
@@ -92,10 +97,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({ onDismiss, onSave }) => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+            <label htmlFor="task-description-input" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
               Description / Notes (Optional)
             </label>
             <textarea
+              id="task-description-input"
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}

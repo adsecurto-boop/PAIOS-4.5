@@ -63,6 +63,7 @@ export const MiniTimerPlayer: React.FC<MiniTimerPlayerProps> = ({
               }}
               className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
               title="Resume Activity"
+              aria-label="Resume Activity"
             >
               <Play className="w-4 h-4" />
             </button>
@@ -74,6 +75,7 @@ export const MiniTimerPlayer: React.FC<MiniTimerPlayerProps> = ({
               }}
               className="p-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-colors"
               title="Pause Activity"
+              aria-label="Pause Activity"
             >
               <Pause className="w-4 h-4" />
             </button>
@@ -86,6 +88,7 @@ export const MiniTimerPlayer: React.FC<MiniTimerPlayerProps> = ({
             }}
             className="p-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-colors flex items-center gap-1 text-xs font-medium px-2.5"
             title="Finish Activity"
+            aria-label="Finish Activity"
           >
             <Square className="w-3.5 h-3.5 fill-current" />
             <span>Finish</span>
