@@ -8,7 +8,14 @@ export interface PaiosNotification {
   timestampMillis: number;
   read: boolean;
   actionUrl?: string;
+  route?: NotificationRoute;
 }
+
+export type NotificationRoute =
+  | { screen: 'TODAY' | 'TIMELINE' | 'TASKS' | 'HEALTH' | 'INSIGHTS' }
+  | { screen: 'CHECKIN' | 'REVIEW' }
+  | { screen: 'TIMELINE'; blockId?: string }
+  | { screen: 'HEALTH'; medicationId?: string };
 
 const NOTIF_STORAGE_KEY = 'paios_notifications_history_v1';
 
@@ -61,7 +68,8 @@ export async function requestNotificationPermission(): Promise<boolean> {
 export async function dispatchNotification(
   title: string,
   message: string,
-  type: PaiosNotification['type'] = 'SYSTEM'
+  type: PaiosNotification['type'] = 'SYSTEM',
+  route?: NotificationRoute,
 ): Promise<PaiosNotification> {
   const notifItem: PaiosNotification = {
     id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -70,6 +78,7 @@ export async function dispatchNotification(
     type,
     timestampMillis: Date.now(),
     read: false,
+    route,
   };
 
   // 1. Save to in-app notification center history
@@ -89,6 +98,8 @@ export async function dispatchNotification(
               id: Math.floor(Math.random() * 100000),
               schedule: { at: new Date(Date.now() + 100) },
               smallIcon: 'res://icon',
+              actionTypeId: 'PAIOS_OPEN',
+              extra: { route, notificationId: notifItem.id },
             },
           ],
         });
@@ -130,10 +141,15 @@ export async function dispatchNotification(
 
     if (!dispatchedViaElectron && 'Notification' in window && Notification.permission === 'granted') {
       try {
-        new Notification(`PAIOS: ${title}`, {
+        const browserNotification = new Notification(`PAIOS: ${title}`, {
           body: message,
           icon: '/favicon.ico',
         });
+        browserNotification.onclick = () => {
+          window.focus();
+          routeNotification(route, notifItem.id);
+          browserNotification.close();
+        };
       } catch (e) {
         console.warn('HTML5 Notification trigger error:', e);
       }
@@ -141,6 +157,29 @@ export async function dispatchNotification(
   }
 
   return notifItem;
+}
+
+export function routeNotification(route?: NotificationRoute, notificationId?: string): void {
+  if (notificationId) markNotificationAsRead(notificationId);
+  if (typeof window !== 'undefined' && route) {
+    window.dispatchEvent(new CustomEvent('paios_notification_route', { detail: route }));
+  }
+}
+
+export async function initializeNativeNotificationActions(): Promise<() => void> {
+  if (typeof window === 'undefined' || !(window as any).Capacitor) return () => undefined;
+  try {
+    await LocalNotifications.registerActionTypes({
+      types: [{ id: 'PAIOS_OPEN', actions: [{ id: 'OPEN', title: 'Open in PAIOS', foreground: true }] }],
+    });
+    const listener = await LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+      routeNotification(event.notification.extra?.route as NotificationRoute | undefined, event.notification.extra?.notificationId);
+    });
+    return () => { void listener.remove(); };
+  } catch (error) {
+    console.warn('Native notification action initialization skipped:', error);
+    return () => undefined;
+  }
 }
 
 export function markNotificationAsRead(id: string): void {

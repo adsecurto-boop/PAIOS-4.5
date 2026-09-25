@@ -8,6 +8,7 @@ import {
   clearAllNotifications,
   dispatchNotification,
   requestNotificationPermission,
+  routeNotification,
 } from '../utils/notifications';
 
 interface NotificationCenterModalProps {
@@ -167,7 +168,10 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
             notifications.map((notif) => (
               <div
                 key={notif.id}
-                onClick={() => markNotificationAsRead(notif.id)}
+                onClick={() => {
+                  markNotificationAsRead(notif.id);
+                  if (notif.route) { routeNotification(notif.route, notif.id); onClose(); }
+                }}
                 className={`p-3 rounded-xl border transition-all cursor-pointer ${
                   notif.read
                     ? 'bg-slate-950/60 border-slate-800/60 opacity-75'
@@ -193,6 +197,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                           minute: '2-digit',
                         })}
                       </span>
+                      {notif.route && <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-300">Open in PAIOS →</span>}
                     </div>
                   </div>
                 </div>

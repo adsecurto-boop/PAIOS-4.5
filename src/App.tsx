@@ -29,7 +29,7 @@ import { AuthModal } from './components/AuthModal';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { UpdatePromptModal } from './components/UpdatePromptModal';
-import { dispatchNotification } from './utils/notifications';
+import { dispatchNotification, initializeNativeNotificationActions, NotificationRoute } from './utils/notifications';
 import { initBackgroundVersionChecker, onVersionUpdateAvailable, VersionManifest } from './utils/versionCheck';
 
 import { TodayScreen } from './screens/TodayScreen';
@@ -137,6 +137,22 @@ export const App: React.FC = () => {
   const [pendingSyncConflict, setPendingSyncConflict] = useState<PendingSyncConflict | null>(null);
 
   useEffect(() => applyPlatformClass(), []);
+
+  useEffect(() => {
+    let removeNativeListener: () => void = () => undefined;
+    void initializeNativeNotificationActions().then((cleanup) => { removeNativeListener = cleanup; });
+    const handleRoute = (event: Event) => {
+      const route = (event as CustomEvent<NotificationRoute>).detail;
+      if (!route) return;
+      setIsMinimized(false);
+      setShowNotificationModal(false);
+      if (route.screen === 'CHECKIN') setShowCheckInModal(true);
+      else if (route.screen === 'REVIEW') setShowReviewModal(true);
+      else setActiveTab(NavTab[route.screen]);
+    };
+    window.addEventListener('paios_notification_route', handleRoute);
+    return () => { removeNativeListener(); window.removeEventListener('paios_notification_route', handleRoute); };
+  }, []);
 
   // Called by the Android bridge before the activity exits. Overlays behave like
   // native sheets: back dismisses the top interaction, then returns to Today.
@@ -261,7 +277,8 @@ export const App: React.FC = () => {
             dispatchNotification(
               `Medication Dose Due: ${med.brandName || med.genericName}`,
               `Time to take ${med.dosageStrength}${med.dosageUnit} (${med.instructions || 'Scheduled Dose'}).`,
-              'MEDICATION'
+              'MEDICATION',
+              { screen: 'HEALTH', medicationId: med.id }
             );
           }
         }
@@ -277,7 +294,8 @@ export const App: React.FC = () => {
               dispatchNotification(
                 `AI Schedule Reminder: ${block.activity}`,
                 `Scheduled block (${block.category}) starting now (${block.start} - ${block.end}). ${block.goal ? 'Goal: ' + block.goal : ''}`,
-                'SCHEDULE'
+                'SCHEDULE',
+                { screen: 'TIMELINE', blockId: block.id }
               );
             }
           }
@@ -294,7 +312,8 @@ export const App: React.FC = () => {
           dispatchNotification(
             `Morning Check-In Reminder`,
             `Good morning ${settings.userName || 'Alex'}! Set your top 3 goals, sleep score, and mindset for today.`,
-            'CHECKIN'
+            'CHECKIN',
+            { screen: 'CHECKIN' }
           );
         }
       }
@@ -309,7 +328,8 @@ export const App: React.FC = () => {
           dispatchNotification(
             `Evening Reflection & Review`,
             `Time for your daily review! Log what went well, blockers, and rate your overall day.`,
-            'CHECKIN'
+            'CHECKIN',
+            { screen: 'REVIEW' }
           );
         }
       }
@@ -368,7 +388,8 @@ export const App: React.FC = () => {
           dispatchNotification(
             `Daily Focus & Performance Summary`,
             summaryMsg,
-            'SYSTEM'
+            'SYSTEM',
+            { screen: 'INSIGHTS' }
           );
         }
       }
