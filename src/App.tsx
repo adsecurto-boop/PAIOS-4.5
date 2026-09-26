@@ -8,7 +8,6 @@ import {
   Cpu,
   BookOpen,
   Settings,
-  Plus,
   Play,
   Zap,
 } from 'lucide-react';
@@ -1285,7 +1284,7 @@ export const App: React.FC = () => {
               onOpenCommandBar={() => setShowCommandBar(true)}
             />
 
-            <DesktopNavigation activeTab={activeTab} onSelectTab={setActiveTab} />
+            <DesktopNavigation activeTab={activeTab} onSelectTab={setActiveTab} onOpenCapture={() => setShowQuickAddMenu(true)} />
 
             {/* Main Content Area */}
             <main className="android-main flex-1 min-h-0 max-w-6xl w-full mx-auto p-3 sm:p-6 pb-28 md:pb-20 overflow-x-hidden">
@@ -1407,6 +1406,11 @@ export const App: React.FC = () => {
                   checkIns={checkIns}
                   reviews={reviews}
                   usageInsightsEnabled={Boolean(settings.localUsageInsightsEnabled)}
+                  captures={captures}
+                  journalEntries={journalEntries}
+                  doseEvents={doseEvents}
+                  vitalSigns={vitalSigns}
+                  appointments={appointments}
                 />
               )}
 
@@ -1465,21 +1469,11 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Mobile Android Floating Action Button (FAB) for Quick Capture */}
-      <button
-        onClick={() => setShowQuickAddMenu(true)}
-        className="fixed bottom-[calc(72px+env(safe-area-inset-bottom,0px))] right-4 z-40 md:hidden w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white shadow-xl shadow-indigo-600/40 border border-indigo-400/30 flex items-center justify-center active:scale-90 transition-transform"
-        aria-label="Quick Capture Task or Note"
-        title="Add to PAIOS"
-      >
-        <Plus className="w-6 h-6" />
-      </button>
-
       {/* Mobile Bottom Navigation Dock */}
       <MobileBottomNav
         activeTab={activeTab}
         onSelectTab={setActiveTab}
-        onOpenCommandBar={() => setShowCommandBar(true)}
+        onOpenCapture={() => setShowQuickAddMenu(true)}
       />
 
       {/* Modals */}

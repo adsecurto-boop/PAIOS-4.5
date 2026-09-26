@@ -16,9 +16,10 @@ import {
   Sparkles,
   ShieldCheck,
 } from 'lucide-react';
-import { ActivityLog, MorningCheckIn, EveningReview, TimelineEntry, Task } from '../types';
+import { ActivityLog, Appointment, DoseEvent, MorningCheckIn, EveningReview, JournalEntry, QuickCapture, TimelineEntry, Task, VitalSign } from '../types';
 import { GamificationHub } from '../components/GamificationHub';
 import { getSevenDayUsageSummary } from '../utils/usageInsights';
+import { LifeTimeline } from '../components/LifeTimeline';
 
 export type TimeframeMode = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' | 'ALL_TIME';
 
@@ -30,6 +31,11 @@ interface InsightsScreenProps {
   checkIns: MorningCheckIn[];
   reviews: EveningReview[];
   usageInsightsEnabled?: boolean;
+  captures?: QuickCapture[];
+  journalEntries?: JournalEntry[];
+  doseEvents?: DoseEvent[];
+  vitalSigns?: VitalSign[];
+  appointments?: Appointment[];
 }
 
 export const InsightsScreen: React.FC<InsightsScreenProps> = ({
@@ -40,6 +46,11 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
   checkIns,
   reviews,
   usageInsightsEnabled = false,
+  captures = [],
+  journalEntries = [],
+  doseEvents = [],
+  vitalSigns = [],
+  appointments = [],
 }) => {
   const [timeframe, setTimeframe] = useState<TimeframeMode>('DAILY');
   const usageSummary = getSevenDayUsageSummary();
@@ -249,6 +260,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
 
   return (
     <div className="space-y-6 pb-12 animate-fade-in">
+      <LifeTimeline timelineEntries={timelineEntries} tasks={tasks} captures={captures} journalEntries={journalEntries} doseEvents={doseEvents} vitalSigns={vitalSigns} appointments={appointments} />
       {/* Header & Timeframe Selector */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">

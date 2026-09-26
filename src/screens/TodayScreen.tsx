@@ -21,8 +21,6 @@ import {
   Activity,
   CalendarCheck,
   ListChecks,
-  Sun,
-  Moon,
   Flame,
   RefreshCw,
   CalendarClock,
@@ -31,6 +29,7 @@ import {
 import { ActivityLog, Task, TimelineEntry, MorningCheckIn, EveningReview, AdaptiveTimetableBlock, AdaptiveTimetableResponse, CaptureDestination, QuickCapture, WeeklyReview } from '../types';
 import { TimetablePlugin, TimetableProposal } from '../core/plugins/TimetablePlugin';
 import { getDailyCommandState } from '../utils/dailyCommandCenter';
+import { getDailyLoopState } from '../utils/dailyLoopEngine';
 import { InboxCard } from '../components/InboxCard';
 import { WeeklyResetCard } from '../components/WeeklyResetCard';
 
@@ -216,32 +215,38 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     .filter((entry) => entry.type === 'ACTIVITY')
     .reduce((total, entry) => total + (entry.durationMinutes || 0), 0);
   const todayString = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const todayCheckIn = checkIns.find((checkIn) => checkIn.dateString === todayString);
   const todayReview = reviews.find((review) => review.dateString === todayString);
   const hasFocusedToday = focusMinutes > 0 || completedToday > 0;
   const hasEveningWindow = now.getHours() >= 17;
 
-  const ritualDates = new Set([
-    ...checkIns.map((checkIn) => checkIn.dateString),
-    ...reviews.map((review) => review.dateString),
-  ]);
-  let dailyRhythmStreak = 0;
-  for (let offset = 0; ; offset += 1) {
-    const date = new Date(now);
-    date.setHours(12, 0, 0, 0);
-    date.setDate(date.getDate() - offset);
-    const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    if (!ritualDates.has(dateString)) break;
-    dailyRhythmStreak += 1;
-  }
-
-  const rhythmSteps = [
-    { label: 'Intention', done: Boolean(todayCheckIn), action: onOpenCheckIn },
-    { label: 'Focus', done: hasFocusedToday, action: onOpenStartActivity },
-    { label: 'Reflect', done: Boolean(todayReview), action: onOpenReview },
-  ];
-  const nextRhythmStep = rhythmSteps.find((step) => !step.done);
   const commandState = getDailyCommandState(timetable, todayTasks, now);
+  const dailyLoop = getDailyLoopState({
+    checkIns,
+    reviews,
+    tasks: todayTasks,
+    hasFocusedToday,
+    isPlanDrifting: commandState.isDrifting,
+    now,
+  });
+
+  const handleDailyLoopAction = () => {
+    if (dailyLoop.primaryAction === 'CHECK_IN') onOpenCheckIn();
+    else if (dailyLoop.primaryAction === 'START_FOCUS') onOpenStartActivity();
+    else if (dailyLoop.primaryAction === 'RESET_DAY') {
+      if (commandState.hasTodayPlan) onReplanDay();
+      else onGeneratePlan();
+    } else if (dailyLoop.primaryAction === 'REVIEW') onOpenReview();
+  };
+
+  const dailyLoopActionLabel = dailyLoop.primaryAction === 'CHECK_IN'
+    ? 'Start morning check-in'
+    : dailyLoop.primaryAction === 'START_FOCUS'
+      ? activeActivity ? 'Resume focus' : 'Start focus'
+      : dailyLoop.primaryAction === 'RESET_DAY'
+        ? commandState.hasTodayPlan ? 'Reset remaining day' : 'Make a realistic plan'
+        : dailyLoop.primaryAction === 'REVIEW'
+          ? 'Close my day'
+          : '';
 
   const handleRollover = () => {
     if (!commandState.rolloverTasks.length) return;
@@ -262,6 +267,42 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         <div className="mt-2 flex items-center gap-2 text-xs text-slate-400 sm:mt-0">
           <CalendarCheck className="h-4 w-4 text-emerald-400" />
           <span>{completedToday} completed · {openTasks.length} still open</span>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-indigo-700/50 bg-gradient-to-br from-indigo-950/70 via-slate-900 to-slate-900 shadow-xl" aria-labelledby="daily-loop-title">
+        <div className="p-5 sm:p-6">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-300">Your daily loop</p>
+                <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2 py-0.5 text-[10px] font-semibold text-slate-300">{dailyLoop.phase.toLowerCase()}</span>
+                {dailyLoop.streak > 0 && <span className="rounded-full border border-amber-800/60 bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold text-amber-300"><Flame className="mr-1 inline h-3 w-3" />{dailyLoop.streak} days</span>}
+              </div>
+              <h2 id="daily-loop-title" className="mt-2 font-heading text-xl font-bold text-white">{dailyLoop.headline}</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">{dailyLoop.guidance}</p>
+            </div>
+            {dailyLoop.primaryAction !== 'NONE' && (
+              <button type="button" onClick={handleDailyLoopAction} disabled={isGeneratingTimetable} className="shrink-0 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-950/50 transition-colors hover:bg-indigo-500 disabled:opacity-50">
+                {dailyLoopActionLabel}<ArrowRight className="ml-2 inline h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Daily loop progress" aria-valuenow={dailyLoop.progress} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all" style={{ width: `${dailyLoop.progress}%` }} />
+          </div>
+
+          {dailyLoop.bigThree.length > 0 && (
+            <div className="mt-4 grid gap-2 sm:grid-cols-3" aria-label="Today's three outcomes">
+              {dailyLoop.bigThree.map((outcome, index) => (
+                <div key={`${outcome}-${index}`} className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/55 px-3 py-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-950 text-[10px] font-bold text-indigo-300">{index + 1}</span>
+                  <span className="truncate text-xs font-medium text-slate-200">{outcome}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
@@ -344,66 +385,6 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </section>
       )}
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-lg">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Flame className="h-4 w-4 text-amber-400" />
-              <h2 className="font-heading text-sm font-bold text-white">Daily rhythm</h2>
-              {dailyRhythmStreak > 0 && (
-                <span className="rounded-full border border-amber-800/60 bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
-                  {dailyRhythmStreak}-day return streak
-                </span>
-              )}
-            </div>
-            <p className="mt-1 text-xs text-slate-400">
-              {todayCheckIn?.mainGoal
-                ? `Today’s intention: ${todayCheckIn.mainGoal}`
-                : 'A two-minute check-in keeps the day anchored to what matters.'}
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5" aria-label="Daily rhythm progress">
-            {rhythmSteps.map((step, index) => (
-              <React.Fragment key={step.label}>
-                {index > 0 && <div className={`h-px w-4 sm:w-7 ${step.done ? 'bg-emerald-500/70' : 'bg-slate-700'}`} />}
-                <button
-                  type="button"
-                  onClick={step.done ? undefined : step.action}
-                  disabled={step.done}
-                  className={`rounded-lg px-2.5 py-1.5 text-[10px] font-semibold transition-colors ${
-                    step.done
-                      ? 'cursor-default border border-emerald-800/60 bg-emerald-950/40 text-emerald-300'
-                      : 'border border-slate-700 bg-slate-950 text-slate-300 hover:border-indigo-500 hover:text-white'
-                  }`}
-                >
-                  {step.done ? <Check className="mr-1 inline h-3 w-3" /> : null}
-                  {step.label}
-                </button>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-        {nextRhythmStep && (
-          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-indigo-900/60 bg-indigo-950/30 px-3 py-2.5">
-            <p className="text-xs text-indigo-100">
-              {!todayCheckIn
-                ? 'Start small: name the one outcome that would make today worthwhile.'
-                : nextRhythmStep.label === 'Reflect' && !hasEveningWindow
-                  ? 'Your evening reflection will be ready later. For now, protect one focused block.'
-                  : nextRhythmStep.label === 'Reflect'
-                    ? 'Close the loop with a quick reflection while the day is still fresh.'
-                    : 'A short focused block is enough to move the day forward.'}
-            </p>
-            <button
-              type="button"
-              onClick={nextRhythmStep.action}
-              className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-500"
-            >
-              {!todayCheckIn ? <><Sun className="mr-1 inline h-3.5 w-3.5" /> Check in</> : nextRhythmStep.label === 'Reflect' ? <><Moon className="mr-1 inline h-3.5 w-3.5" /> Reflect</> : 'Start focus'}
-            </button>
-          </div>
-        )}
-      </section>
       {/* Rule B1: 60s Contextual Schedule Proposal Banner */}
       {activeProposal && activeProposal.status === 'pending' && proposalSecondsLeft > 0 && (
         <div className="bg-indigo-950/80 border border-indigo-500/50 rounded-2xl p-4 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all animate-pulse-subtle">
