@@ -72,7 +72,7 @@ pipeline {
                 Compress-Archive -Path "dist/*" -DestinationPath "dist/PAIOS-Web-Dist.zip" -Force
                 $manifest = @"
 {
-  "version": "4.8.1",
+  "version": "4.8.2",
   "buildNumber": "$($env:BUILD_NUMBER)",
   "buildTimestamp": $([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()),
   "gitCommit": "$($env:GIT_COMMIT)",
@@ -84,13 +84,13 @@ pipeline {
       "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip",
       "webDistUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
       "filename": "PAIOS-Desktop-Windows-x64.zip",
-      "version": "4.8.1"
+      "version": "4.8.2"
     },
     "android": {
       "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk",
       "debugUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk",
       "filename": "app-release.apk",
-      "version": "4.8.1"
+      "version": "4.8.2"
     }
   }
 }
@@ -344,7 +344,7 @@ Platform: Windows x64 Desktop
                 $desktopHash = (Get-FileHash $desktopZip -Algorithm SHA256).Hash.ToLowerInvariant()
                 $buildTimestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
                 $commit = if ($env:GIT_COMMIT) { $env:GIT_COMMIT } else { (git rev-parse HEAD).Trim() }
-                $artifactBase = 'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact'
+                $releaseBase = "https://github.com/$($env:REPO_OWNER)/$($env:REPO_NAME)/releases/download/latest"
 
                 $manifest = @{
                     version = $version
@@ -356,15 +356,13 @@ Platform: Windows x64 Desktop
                     mandatory = $false
                     platforms = @{
                         windows = @{
-                            url = "$artifactBase/dist-electron/PAIOS-Desktop-Windows-x64.zip"
-                            webDistUrl = "$artifactBase/dist/PAIOS-Web-Dist.zip"
+                            url = "$releaseBase/PAIOS-Desktop-Windows-x64.zip"
                             filename = 'PAIOS-Desktop-Windows-x64.zip'
                             version = $version
                             sha256 = $desktopHash
                         }
                         android = @{
-                            url = "$artifactBase/android/app/build/outputs/apk/release/app-release.apk"
-                            debugUrl = "$artifactBase/android/app/build/outputs/apk/debug/app-debug.apk"
+                            url = "$releaseBase/app-release.apk"
                             filename = 'app-release.apk'
                             version = $version
                             sha256 = $apkHash
@@ -372,13 +370,72 @@ Platform: Windows x64 Desktop
                     }
                 } | ConvertTo-Json -Depth 5
 
-                Set-Content -Path 'dist/version.json' -Value $manifest -Encoding utf8
-                Set-Content -Path 'version.json' -Value $manifest -Encoding utf8
+                $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+                [IO.File]::WriteAllText((Join-Path $pwd 'dist/version.json'), $manifest, $utf8NoBom)
+                [IO.File]::WriteAllText((Join-Path $pwd 'version.json'), $manifest, $utf8NoBom)
                 if (Test-Path $webZip) { Remove-Item -Force $webZip }
                 $webFiles = Get-ChildItem -Path 'dist' -Force | Where-Object { $_.Name -ne 'PAIOS-Web-Dist.zip' }
                 Compress-Archive -Path $webFiles.FullName -DestinationPath $webZip -Force
                 Write-Output "[SUCCESS] Release manifest generated for v$version with SHA-256 verification."
                 '''
+            }
+        }
+
+        stage('Publish GitHub Update Assets') {
+            steps {
+                echo "=== Publishing public auto-update assets ==="
+                withCredentials([string(credentialsId: 'github-pat-token', variable: 'GITHUB_TOKEN')]) {
+                    powershell '''
+                    $ErrorActionPreference = 'Stop'
+                    $headers = @{
+                        Authorization = "Bearer $($env:GITHUB_TOKEN)"
+                        Accept = 'application/vnd.github+json'
+                        'X-GitHub-Api-Version' = '2022-11-28'
+                    }
+                    $repoApi = "https://api.github.com/repos/$($env:REPO_OWNER)/$($env:REPO_NAME)"
+                    $releaseApi = "$repoApi/releases/tags/latest"
+                    try {
+                        $release = Invoke-RestMethod -Uri $releaseApi -Headers $headers
+                        $updateBody = @{
+                            tag_name = 'latest'
+                            target_commitish = $env:GIT_COMMIT
+                            name = "PAIOS v$((Get-Content package.json -Raw | ConvertFrom-Json).version) build $($env:BUILD_NUMBER)"
+                            body = "Automated PAIOS release build $($env:BUILD_NUMBER) from commit $($env:GIT_COMMIT)."
+                            draft = $false
+                            prerelease = $false
+                        } | ConvertTo-Json
+                        $release = Invoke-RestMethod -Uri "$repoApi/releases/$($release.id)" -Method Patch -Headers $headers -ContentType 'application/json' -Body $updateBody
+                    } catch {
+                        if ($_.Exception.Response.StatusCode.value__ -ne 404) { throw }
+                        $createBody = @{
+                            tag_name = 'latest'
+                            target_commitish = $env:GIT_COMMIT
+                            name = "PAIOS v$((Get-Content package.json -Raw | ConvertFrom-Json).version) build $($env:BUILD_NUMBER)"
+                            body = "Automated PAIOS release build $($env:BUILD_NUMBER) from commit $($env:GIT_COMMIT)."
+                            draft = $false
+                            prerelease = $false
+                        } | ConvertTo-Json
+                        $release = Invoke-RestMethod -Uri "$repoApi/releases" -Method Post -Headers $headers -ContentType 'application/json' -Body $createBody
+                    }
+
+                    $uploads = @(
+                        @{ Name = 'PAIOS-Desktop-Windows-x64.zip'; Path = 'dist-electron/PAIOS-Desktop-Windows-x64.zip'; Type = 'application/zip' },
+                        @{ Name = 'app-release.apk'; Path = 'android/app/build/outputs/apk/release/app-release.apk'; Type = 'application/vnd.android.package-archive' },
+                        @{ Name = 'version.json'; Path = 'version.json'; Type = 'application/json' }
+                    )
+                    foreach ($upload in $uploads) {
+                        if (!(Test-Path $upload.Path)) { throw "Release asset missing: $($upload.Path)" }
+                        $existing = $release.assets | Where-Object { $_.name -eq $upload.Name }
+                        foreach ($asset in $existing) {
+                            Invoke-RestMethod -Uri "$repoApi/releases/assets/$($asset.id)" -Method Delete -Headers $headers
+                        }
+                        $encodedName = [Uri]::EscapeDataString($upload.Name)
+                        $uploadUrl = "https://uploads.github.com/repos/$($env:REPO_OWNER)/$($env:REPO_NAME)/releases/$($release.id)/assets?name=$encodedName"
+                        Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $headers -ContentType $upload.Type -InFile $upload.Path | Out-Null
+                        Write-Output "[SUCCESS] Published $($upload.Name)"
+                    }
+                    '''
+                }
             }
         }
 

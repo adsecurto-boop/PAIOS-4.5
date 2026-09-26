@@ -41,7 +41,7 @@ function getBundledBuildNumber() {
   } catch (error) {
     console.warn('[PAIOS Updater] Could not read bundled build number:', error);
   }
-  return 13;
+  return 14;
 }
 
 function isReleaseNewerMain(targetVersion, targetBuild, currentVersion, currentBuild) {
@@ -136,7 +136,7 @@ function createWindow() {
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-            "default-src 'self'; connect-src 'self' https: http://localhost:3001 http://localhost:3000 ws://localhost:3001 ws://localhost:3000; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
+            "default-src 'self'; connect-src 'self' https: http://localhost:3001 http://localhost:3000 http://localhost:8080 http://127.0.0.1:8080 ws://localhost:3001 ws://localhost:3000; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
           ]
         }
       });
@@ -192,7 +192,7 @@ function isSemVerGreaterMain(remote, current) {
     const userDistIndex = path.join(userDistDir, 'index.html');
     const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
     const activeVersionFile = path.join(app.getPath('userData'), 'active_version.json');
-    const currentVersion = app.getVersion() || '4.8.1';
+    const currentVersion = app.getVersion() || '4.8.2';
 
     // Development & Unpackaged Guard:
     // When running locally from workspace, ALWAYS prioritize compiled workspace dist.
@@ -422,7 +422,7 @@ ipcMain.handle('show-desktop-notification', async (event, data) => {
 
 // IPC Handlers for In-App Live Sync & Auto-Update Controls
 ipcMain.handle('paios:get-version', () => {
-  return app.getVersion() || '4.8.1';
+  return app.getVersion() || '4.8.2';
 });
 
 ipcMain.handle('paios:get-config', () => {
@@ -615,7 +615,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, buildNumber, fileP
     return { success: false, error: 'Updater disabled in development/workspace mode', updated: false };
   }
 
-  const currentAppVersion = app.getVersion() || '4.8.1';
+  const currentAppVersion = app.getVersion() || '4.8.2';
   const currentBuildNumber = getBundledBuildNumber();
   if (!isReleaseNewerMain(version, buildNumber, currentAppVersion, currentBuildNumber)) {
     console.warn(`[PAIOS Updater] Blocked: Target ${version} build ${buildNumber} is not newer than ${currentAppVersion} build ${currentBuildNumber}.`);
@@ -698,7 +698,7 @@ ipcMain.handle('paios:apply-update', async (event, { version, buildNumber, fileP
       fs.writeFileSync(
         path.join(app.getPath('userData'), 'active_version.json'),
         JSON.stringify({
-          version: version || '4.8.1',
+          version: version || '4.8.2',
           buildNumber: Number(buildNumber || 0),
           gitCommit: gitCommit || 'latest',
           appliedAt: Date.now(),

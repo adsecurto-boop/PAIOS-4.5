@@ -77,6 +77,40 @@ describe('UpdateService Unit Tests', () => {
     expect(res.manifest.gitCommit).toBe('fe981a3');
   });
 
+  it('prefers the public checksummed GitHub release manifest over authenticated Jenkins', async () => {
+    const releaseManifest: VersionManifest = {
+      version: '4.8.3',
+      buildNumber: '99',
+      buildTimestamp: Date.now(),
+      gitCommit: 'release99',
+      platforms: {
+        windows: {
+          url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
+          filename: 'PAIOS-Desktop-Windows-x64.zip',
+          sha256: 'a'.repeat(64),
+        },
+      },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/releases/download/latest/version.json')) {
+        return { ok: true, json: async () => releaseManifest } as Response;
+      }
+      return { ok: false } as Response;
+    });
+    global.fetch = fetchMock as typeof fetch;
+
+    const result = await UpdateService.checkForUpdates(undefined, { forceCheck: true });
+
+    expect(result.updateAvailable).toBe(true);
+    expect(result.manifest.buildNumber).toBe('99');
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/releases/download/latest/version.json'),
+      expect.any(Object),
+    );
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('localhost:8080'))).toBe(false);
+  });
+
   it('strictly blocks downgrade attempts when remote version is older (4.5.7 or 4.6.0)', async () => {
     const olderManifest: VersionManifest = {
       version: '4.5.7',

@@ -129,7 +129,7 @@ const getStoredActiveVersion = (): string | null => {
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem('paios_active_version');
-      const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.8.1';
+      const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.8.2';
       // Never honor a stored version if it is older than or equal to the compiled code version!
       if (stored && isSemVerGreater(stored, compiled)) {
         return stored;
@@ -145,11 +145,11 @@ const getStoredActiveVersion = (): string | null => {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.8.1'),
-  buildNumber: typeof __BUILD_NUMBER__ !== 'undefined' ? __BUILD_NUMBER__ : '13',
+  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.8.2'),
+  buildNumber: typeof __BUILD_NUMBER__ !== 'undefined' ? __BUILD_NUMBER__ : '14',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
   gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'c3249c0'),
-  releaseNotes: 'PAIOS v4.8.1: Reliable cross-platform automatic updates',
+  releaseNotes: 'PAIOS v4.8.2: Public, checksummed desktop and Android updates',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
@@ -320,7 +320,23 @@ export class UpdateService {
       }
     }
 
-    // 2. Fetch latest GitHub Raw Version Manifest
+    // 2. Fetch the checksummed manifest published with the stable GitHub
+    // release. Unlike Jenkins, this endpoint is public and does not require a
+    // browser session or expose CI credentials to installed applications.
+    if (!fetchedManifest) {
+      try {
+        const res = await fetch(
+          'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/version.json?t=' + Date.now(),
+          { headers: { 'Cache-Control': 'no-cache' } }
+        );
+        if (res.ok) fetchedManifest = await res.json();
+      } catch (err) {
+        console.warn('[UpdateService] GitHub release manifest check deferred:', err);
+      }
+    }
+
+    // 3. Fall back to the checked-in manifest. Native clients reject it when
+    // it lacks a package checksum, allowing later trusted sources to run.
     if (!fetchedManifest) {
       try {
         const res = await fetch(
@@ -350,10 +366,10 @@ export class UpdateService {
       }
     }
 
-    // 3. Fetch latest GitHub Commits Atom Feed for real-time commit metadata
+    // 4. Fetch latest GitHub Commits Atom Feed for display metadata only.
     latestCommitInfo = await this.fetchLatestGitHubCommit();
 
-    // 4. Try Jenkins. Android emulators reach the host through 10.0.2.2;
+    // 5. Try Jenkins. Android emulators reach the host through 10.0.2.2;
     // desktop clients use loopback. Physical devices can supply a custom URL.
     if (!fetchedManifest) {
       const jenkinsHosts = getRunningPlatform() === 'android'
@@ -370,7 +386,7 @@ export class UpdateService {
       }
     }
 
-    // 5. Try local Express API /api/version
+    // 6. Try local Express API /api/version
     if (!fetchedManifest) {
       try {
         const res = await fetch('/api/version?t=' + Date.now(), {
@@ -383,7 +399,7 @@ export class UpdateService {
     }
 
     // Compose final remote manifest
-    const targetVersion = fetchedManifest?.version || current.version || '4.8.1';
+    const targetVersion = fetchedManifest?.version || current.version || '4.8.2';
     const targetCommit =
       latestCommitInfo?.shortSha ||
       fetchedManifest?.gitCommit ||
@@ -403,7 +419,7 @@ export class UpdateService {
       releaseNotes:
         latestCommitInfo?.title ||
         fetchedManifest?.releaseNotes ||
-        'PAIOS v4.8.1: Reliable cross-platform automatic updates',
+        'PAIOS v4.8.2: Public, checksummed desktop and Android updates',
       platforms: {
         windows: {
           url:
@@ -429,7 +445,7 @@ export class UpdateService {
     this.cachedManifest = manifest;
 
     const runningCommit = (getStoredActiveCommit() || current.gitCommit || '').trim();
-    const runningVersion = (getStoredActiveVersion() || current.version || '4.8.1').trim();
+    const runningVersion = (getStoredActiveVersion() || current.version || '4.8.2').trim();
 
     // Release identity is SemVer + monotonic CI build number. Commit hash
     // differences alone remain insufficient to trigger an update.

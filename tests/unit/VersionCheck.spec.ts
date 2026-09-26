@@ -16,8 +16,8 @@ describe('VersionCheck Unit Tests (Downgrade Prevention & SemVer Enforcement)', 
     vi.restoreAllMocks();
   });
 
-  it('reports current client version as 4.8.1', () => {
-    expect(CLIENT_VERSION.version).toBe('4.8.1');
+  it('reports current client version as 4.8.2', () => {
+    expect(CLIENT_VERSION.version).toBe('4.8.2');
   });
 
   it('suppresses update notification when remote version is older (4.5.7)', async () => {
@@ -47,8 +47,8 @@ describe('VersionCheck Unit Tests (Downgrade Prevention & SemVer Enforcement)', 
 
   it('triggers an update for a newer verified CI build of the same version', async () => {
     const sameManifest: VersionManifest = {
-      version: '4.8.1',
-      buildNumber: '14',
+      version: '4.8.2',
+      buildNumber: '15',
       buildTimestamp: Date.now(),
       gitCommit: 'latest_hash',
       releaseNotes: 'Current release',
@@ -70,10 +70,10 @@ describe('VersionCheck Unit Tests (Downgrade Prevention & SemVer Enforcement)', 
     unsubscribe();
   });
 
-  it('triggers update notification when remote version is strictly newer (4.8.2)', async () => {
+  it('triggers update notification when remote version is strictly newer (4.8.3)', async () => {
     const newerManifest: VersionManifest = {
-      version: '4.8.2',
-      buildNumber: '14',
+      version: '4.8.3',
+      buildNumber: '15',
       buildTimestamp: Date.now() + 10000,
       gitCommit: 'newer_hash',
       releaseNotes: 'Newer release',
