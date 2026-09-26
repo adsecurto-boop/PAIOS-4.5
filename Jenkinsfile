@@ -251,13 +251,6 @@ pipeline {
                         // 4. Compile Android APKs via Gradle (assembleDebug & assembleRelease)
                         dir('android') {
                             powershell '''
-                            $gradleFile = 'app/build.gradle'
-                            $gradleText = Get-Content $gradleFile -Raw
-                            $gradleText = $gradleText -replace 'versionCode[ ]+[0-9]+', "versionCode $($env:BUILD_NUMBER)"
-                            Set-Content -Path $gradleFile -Value $gradleText -Encoding utf8
-                            Write-Output "[INFO] Android versionCode set to Jenkins build $($env:BUILD_NUMBER)"
-                            '''
-                            powershell '''
                             # Fresh Windows agents do not always have the standard debug
                             # keystore. Create it only when a production keystore was not
                             # supplied, matching the project's documented test-release fallback.

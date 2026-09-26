@@ -5,6 +5,8 @@ plugins {
     id 'com.google.firebase.crashlytics'
 }
 
+def paiosBuildNumber = (System.getenv('BUILD_NUMBER') ?: '13').toInteger()
+
 android {
     namespace 'com.paios.app'
     compileSdk 34
@@ -38,7 +40,9 @@ android {
         applicationId "com.paios.app"
         minSdk 24
         targetSdk 34
-        versionCode 13
+        // Jenkins exposes BUILD_NUMBER automatically. Local builds retain the
+        // checked-in fallback without rewriting this Groovy file (and risking BOM corruption).
+        versionCode paiosBuildNumber
         versionName "4.8.1"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
