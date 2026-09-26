@@ -7,6 +7,7 @@ import {
   markAllNotificationsAsRead,
   clearAllNotifications,
   dispatchNotification,
+  hasNotificationPermission,
   requestNotificationPermission,
   routeNotification,
 } from '../utils/notifications';
@@ -27,9 +28,11 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   useEffect(() => {
     if (isOpen) {
       reloadNotifs();
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        setPermGranted(Notification.permission === 'granted');
-      }
+      let active = true;
+      void hasNotificationPermission().then((granted) => {
+        if (active) setPermGranted(granted);
+      });
+      return () => { active = false; };
     }
   }, [isOpen]);
 
@@ -109,7 +112,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
           <div className="p-3 bg-indigo-950/60 border-b border-indigo-800/60 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs text-indigo-200">
               <AlertCircle className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span>Enable native browser / phone alerts for schedule & medication reminders.</span>
+              <span>Enable native desktop, browser, or phone alerts for schedule and medication reminders.</span>
             </div>
             <button
               onClick={handleRequestPerm}

@@ -40,6 +40,28 @@ export function saveNotificationsHistory(items: PaiosNotification[]): void {
   }
 }
 
+export async function hasNotificationPermission(): Promise<boolean> {
+  const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+  if (electronAPI?.notificationsSupported) {
+    try {
+      return Boolean(await electronAPI.notificationsSupported());
+    } catch (error) {
+      console.warn('Electron notification capability check failed:', error);
+      return false;
+    }
+  }
+
+  try {
+    if (typeof window !== 'undefined' && (window as any).Capacitor) {
+      return (await LocalNotifications.checkPermissions()).display === 'granted';
+    }
+  } catch (error) {
+    console.warn('Capacitor notification capability check failed:', error);
+  }
+
+  return typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
+}
+
 export async function requestNotificationPermission(): Promise<boolean> {
   // Electron notifications are delivered by the trusted main-process bridge and
   // do not use the browser permission prompt.

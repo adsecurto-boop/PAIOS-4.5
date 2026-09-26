@@ -1,15 +1,38 @@
-const { app, BrowserWindow, globalShortcut, Menu, ipcMain, dialog, session, Notification } = require('electron');
+const { app, BrowserWindow, globalShortcut, Menu, ipcMain, dialog, session, Notification, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const crypto = require('crypto');
 
 // Configure Windows App User Model ID for native OS toast notifications & taskbar integration
-if (process.platform === 'win32') {
-  app.setAppUserModelId('com.paios.desktop');
-}
+const WINDOWS_APP_USER_MODEL_ID = 'com.paios.desktop';
+if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
 
 let mainWindow;
+let notificationRegistration = { success: true, required: false };
+
+function ensureWindowsNotificationShortcut() {
+  if (process.platform !== 'win32' || !app.isPackaged) return { success: true, required: false };
+  try {
+    const programsDir = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs');
+    const shortcutPath = path.join(programsDir, 'PAIOS Desktop.lnk');
+    fs.mkdirSync(programsDir, { recursive: true });
+    const operation = fs.existsSync(shortcutPath) ? 'replace' : 'create';
+    const written = shell.writeShortcutLink(shortcutPath, operation, {
+      target: process.execPath,
+      cwd: path.dirname(process.execPath),
+      description: 'PAIOS Desktop',
+      icon: process.execPath,
+      iconIndex: 0,
+      appUserModelId: WINDOWS_APP_USER_MODEL_ID,
+    });
+    if (!written) throw new Error('Windows rejected the Start Menu shortcut registration');
+    return { success: true, required: true, shortcutPath };
+  } catch (error) {
+    console.error('[PAIOS Notifications] Windows shortcut registration failed:', error);
+    return { success: false, required: true, error: error?.message || String(error) };
+  }
+}
 
 function getBundledBuildNumber() {
   try {
@@ -354,7 +377,10 @@ function isSemVerGreaterMain(remote, current) {
 }
 
 // IPC Handlers for Desktop Native OS Notifications
-ipcMain.handle('paios:notifications-supported', () => Boolean(Notification?.isSupported?.()));
+ipcMain.handle('paios:notifications-supported', (event) => {
+  if (event.sender !== mainWindow?.webContents) return false;
+  return Boolean(Notification?.isSupported?.()) && notificationRegistration.success;
+});
 
 ipcMain.on('show-desktop-notification', (event, data) => {
   try {
@@ -375,6 +401,7 @@ ipcMain.on('show-desktop-notification', (event, data) => {
 
 ipcMain.handle('show-desktop-notification', async (event, data) => {
   try {
+    if (event.sender !== mainWindow?.webContents) return { success: false, error: 'Untrusted IPC sender' };
     const { title, body, message, icon } = data || {};
     if (Notification && Notification.isSupported && Notification.isSupported()) {
       const notifIcon = icon || (fs.existsSync(path.join(__dirname, 'dist', 'favicon.ico')) ? path.join(__dirname, 'dist', 'favicon.ico') : undefined);
@@ -716,7 +743,13 @@ ipcMain.handle('paios:open-external', async (event, targetUrl) => {
   return false;
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  notificationRegistration = ensureWindowsNotificationShortcut();
+  if (!notificationRegistration.success) {
+    console.warn('[PAIOS Notifications] Native Windows toasts may be unavailable:', notificationRegistration.error);
+  }
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

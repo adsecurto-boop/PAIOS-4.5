@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { dispatchNotification, requestNotificationPermission } from '../../src/utils/notifications';
+import { dispatchNotification, hasNotificationPermission, requestNotificationPermission } from '../../src/utils/notifications';
 
 describe('Unit Test: Desktop OS Native Notifications & Fallbacks (BUG-02)', () => {
   beforeEach(() => {
@@ -26,6 +26,16 @@ describe('Unit Test: Desktop OS Native Notifications & Fallbacks (BUG-02)', () =
       body: 'Take Sertraline 50 mg now',
       message: 'Take Sertraline 50 mg now',
     });
+  });
+
+  it('uses the Electron native capability instead of browser permission state', async () => {
+    const notificationsSupported = vi.fn().mockResolvedValue(true);
+    (window as any).electronAPI = { notificationsSupported };
+    (window as any).Notification = { permission: 'denied' };
+
+    await expect(hasNotificationPermission()).resolves.toBe(true);
+    await expect(requestNotificationPermission()).resolves.toBe(true);
+    expect(notificationsSupported).toHaveBeenCalledTimes(2);
   });
 
   it('dispatches desktop notification via window.require("electron").ipcRenderer fallback', async () => {
