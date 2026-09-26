@@ -253,7 +253,7 @@ pipeline {
                             powershell '''
                             $gradleFile = 'app/build.gradle'
                             $gradleText = Get-Content $gradleFile -Raw
-                            $gradleText = $gradleText -replace 'versionCode\s+\d+', "versionCode $($env:BUILD_NUMBER)"
+                            $gradleText = $gradleText -replace 'versionCode[ ]+[0-9]+', "versionCode $($env:BUILD_NUMBER)"
                             Set-Content -Path $gradleFile -Value $gradleText -Encoding utf8
                             Write-Output "[INFO] Android versionCode set to Jenkins build $($env:BUILD_NUMBER)"
                             '''
