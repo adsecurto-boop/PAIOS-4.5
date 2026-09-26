@@ -25,7 +25,7 @@ function createDummyAction(txId: string, title = 'Sample Task'): ProposedAction 
 describe('ActionRecovery Unit Tests', () => {
   beforeEach(() => {
     PAIOSStorage.clear();
-    ActionStorage.clearLedger();
+    ActionStorage.clearLedger(true);
   });
 
   it('safely marks transactions interrupted in VALIDATING state as FAILED', () => {
@@ -92,10 +92,11 @@ describe('ActionRecovery Unit Tests', () => {
     const taskId = String(tasks[0].id);
 
     const txId = 'tx-already-written';
+    const committedAction = createDummyAction(txId, 'Already saved task');
     const committingTx: TransactionRecord = {
       id: txId,
       originalCommand: 'add task Already saved task',
-      actions: [createDummyAction(txId, 'Already saved task')],
+      actions: [committedAction],
       risk: 'LOW',
       status: 'COMMITTING',
       createdAt: Date.now() - 5000,
@@ -105,6 +106,13 @@ describe('ActionRecovery Unit Tests', () => {
       affectedRecords: [{ storageKey: 'paios_tasks_v1', recordId: taskId }],
       expectedRevisions: {},
       beforeSnapshot: [],
+      afterSnapshot: [{
+        storageKey: 'paios_tasks_v1',
+        recordId: taskId,
+        data: JSON.parse(JSON.stringify(tasks[0])),
+        exists: true,
+      }],
+      stepMarkers: [{ actionIndex: 0, actionId: committedAction.id, completedAt: Date.now() - 1000 }],
       syncStatus: 'LOCAL',
       undoStatus: 'AVAILABLE',
     };

@@ -3,6 +3,7 @@ import {
   ProposedAction,
   InterpretationResult,
   AnyActionPayload,
+  generateSecureUUID,
 } from './actionTypes';
 import { validateProposedAction, validateActionPayload, VALID_ACTION_TYPES } from './actionSchemas';
 import { ActionRiskPolicy } from './ActionRiskPolicy';
@@ -13,22 +14,48 @@ import { sendClientGeminiChat } from '../../geminiClient';
 import { AuthSyncService } from '../../services/AuthSyncService';
 
 function generateActionId(): string {
-  return `act_ai_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  return `act_ai_${generateSecureUUID()}`;
 }
 
 function generateTransactionId(): string {
-  return `tx_ai_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  return `tx_ai_${generateSecureUUID()}`;
+}
+
+export interface InterpretOptions {
+  signal?: AbortSignal;
 }
 
 export class AiActionInterpreter {
   /**
-   * Interprets complex or ambiguous requests via AI proxy with strict schema validation
+   * Interprets complex or ambiguous requests via AI proxy with strict schema validation,
+   * supporting abort signals and cancellation.
    */
-  static async interpret(userText: string): Promise<InterpretationResult> {
-    const rawText = userText.trim();
-    if (!rawText) {
-      return { confidence: 0, actions: [], rawText, tier: 'AI_INTERPRETER' };
+  static async interpret(userText: string, options?: InterpretOptions): Promise<InterpretationResult> {
+    if (options?.signal?.aborted) {
+      throw new Error('Operation was aborted');
     }
+
+    const abortPromise = new Promise<never>((_, reject) => {
+      if (options?.signal) {
+        if (options.signal.aborted) {
+          reject(new Error('Operation was aborted'));
+          return;
+        }
+        options.signal.addEventListener(
+          'abort',
+          () => {
+            reject(new Error('Operation was aborted'));
+          },
+          { once: true }
+        );
+      }
+    });
+
+    const executionPromise = (async (): Promise<InterpretationResult> => {
+      const rawText = userText.trim();
+      if (!rawText) {
+        return { confidence: 0, actions: [], rawText, tier: 'AI_INTERPRETER' };
+      }
 
     // Pre-flight check: clinical safety interceptor
     if (/\b(double.*dose|take.*two.*pills|take.*extra.*pill|increase.*dose|decrease.*dose|change.*dosage|stop.*taking.*medication)\b/i.test(rawText)) {
@@ -80,6 +107,7 @@ CRITICAL SAFETY BOUNDARIES:
     try {
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
+        signal: options?.signal,
         headers: {
           'Content-Type': 'application/json',
           ...(AuthSyncService.getToken() ? { Authorization: `Bearer ${AuthSyncService.getToken()}` } : {}),
@@ -221,13 +249,62 @@ CRITICAL SAFETY BOUNDARIES:
       };
     }
 
-    return {
-      confidence: 0.9,
-      actions: validatedActions,
-      rawText,
-      tier: 'AI_INTERPRETER',
-      explanation: replyText.replace(/\[\[[\s\S]*?\]\]/g, '').trim(),
-    };
+        return {
+          confidence: 0.9,
+          actions: validatedActions,
+          rawText,
+          tier: 'AI_INTERPRETER',
+          explanation: replyText.replace(/\[\[[\s\S]*?\]\]/g, '').trim(),
+        };
+      })();
+
+      return Promise.race([executionPromise, abortPromise]);
+    }
+
+  /**
+   * Interprets requests with an enforceable timeout, cancelling work if exceeded
+   */
+  static async interpretWithTimeout(
+    userText: string,
+    options: InterpretOptions = {},
+    timeoutMs: number = 10000
+  ): Promise<InterpretationResult> {
+    const timeoutController = new AbortController();
+    let timeoutId: any;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        timeoutController.abort();
+        reject(new Error(`AI interpretation timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        clearTimeout(timeoutId);
+        throw new Error('Operation was aborted');
+      }
+      options.signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timeoutId);
+          timeoutController.abort();
+        },
+        { once: true }
+      );
+    }
+
+    try {
+      const result = await Promise.race([
+        this.interpret(userText, { signal: timeoutController.signal }),
+        timeoutPromise,
+      ]);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
   }
 
   private static saveAwaitingInterpretation(command: string): void {

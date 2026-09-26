@@ -1,4 +1,4 @@
-import { ActionType, ActionRisk, ProposedAction, AnyActionPayload, RecordExpensePayload, RecordIncomePayload } from './actionTypes';
+import { ActionType, ActionRisk, ProposedAction, AnyActionPayload, RecordExpensePayload, RecordIncomePayload, TransactionRecord } from './actionTypes';
 import { ACTION_REGISTRY } from './ActionRegistry';
 
 export const HIGH_FINANCIAL_THRESHOLD = 25000; // e.g. ₹25,000 or $500 equivalent
@@ -137,13 +137,15 @@ export class ActionRiskPolicy {
   /**
    * Evaluates the collective risk of a proposed multi-action transaction
    */
-  static evaluateTransactionRisk(actions: ProposedAction[]): RiskEvaluation {
+  static evaluateTransactionRisk(target: ProposedAction[] | TransactionRecord): RiskEvaluation {
+    const actions = Array.isArray(target) ? target : (target && Array.isArray(target.actions) ? target.actions : []);
     if (actions.length === 0) {
+      const isBlocked = !Array.isArray(target) && (target as any)?.risk === 'BLOCKED';
       return {
-        risk: 'LOW',
+        risk: isBlocked ? 'BLOCKED' : 'LOW',
         requiresConfirmation: false,
-        reasons: ['Empty transaction'],
-        isBlocked: false,
+        reasons: isBlocked ? ['Blocked transaction'] : ['Empty transaction'],
+        isBlocked,
       };
     }
 

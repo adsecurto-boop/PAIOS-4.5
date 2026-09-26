@@ -16,6 +16,8 @@ export interface Task {
   createdAtMillis: number;
   completedAtMillis?: number | null;
   safetyWarning?: string | null;
+  revision?: number;
+  completed?: boolean;
 }
 
 export interface ActivityLog {
@@ -193,6 +195,7 @@ export interface RefillInventory {
   daysSupplied?: number; // Days of medication supplied (e.g. 30, 60, 90)
   dosesPerDay?: number; // Times per day to take (e.g. 1, 2, 3)
   timingSlots?: ('Morning' | 'Afternoon' | 'Night')[]; // Slots e.g. ['Morning', 'Night']
+  currentSupply?: number;
 }
 
 export interface VitalSign {
@@ -217,6 +220,9 @@ export interface AIMessage {
   actionPayloadJson?: string | null;
   isActionConfirmed?: boolean | null;
   timestampMillis: number;
+  allocatedBudget?: number;
+  actualSpent?: number;
+  surplus?: number;
 }
 
 export type AiChatMessage = AIMessage;
@@ -481,6 +487,9 @@ export interface DailySurplusRecord {
   actualSpend: number;
   sweptAmount: number;
   timestampMillis: number;
+  allocatedBudget?: number;
+  actualSpent?: number;
+  surplus?: number;
 }
 
 export interface DailyNetSavings {

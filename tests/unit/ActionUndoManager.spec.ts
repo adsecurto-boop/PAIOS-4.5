@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ActionUndoManager } from '../../src/core/actions/ActionUndoManager';
 import { ActionTransactionManager } from '../../src/core/actions/ActionTransactionManager';
+import { ActionConfirmationManager } from '../../src/core/actions/ActionConfirmationManager';
 import { ProposedAction } from '../../src/core/actions/actionTypes';
 import { PAIOSStorage } from '../../src/storage';
 import { ActionStorage } from '../../src/core/actions/actionStorage';
@@ -11,7 +12,8 @@ import { ActionStorage } from '../../src/core/actions/actionStorage';
 describe('ActionUndoManager Unit Tests', () => {
   beforeEach(() => {
     PAIOSStorage.clear();
-    ActionStorage.clearLedger();
+    ActionStorage.clearLedger(true);
+    ActionConfirmationManager.reset();
   });
 
   it('successfully undoes a completed task and preserves audit records', async () => {
@@ -36,7 +38,8 @@ describe('ActionUndoManager Unit Tests', () => {
     const tx = ActionTransactionManager.buildTransaction([completeAction], 'complete quarterly audit');
     tx.id = 'tx-comp-1';
 
-    const execReport = await ActionTransactionManager.executeTransaction(tx);
+    const proof = ActionConfirmationManager.generateProof(tx);
+    const execReport = await ActionTransactionManager.executeTransaction(tx, proof);
     expect(execReport.success).toBe(true);
     expect(execReport.transaction.status).toBe('COMMITTED');
 
@@ -78,7 +81,8 @@ describe('ActionUndoManager Unit Tests', () => {
 
     const tx = ActionTransactionManager.buildTransaction([completeAction], 'file expense report');
     tx.id = 'tx-file-1';
-    await ActionTransactionManager.executeTransaction(tx);
+    const proof = ActionConfirmationManager.generateProof(tx);
+    await ActionTransactionManager.executeTransaction(tx, proof);
 
     // First undo
     const firstUndo = await ActionUndoManager.undoTransaction('tx-file-1');

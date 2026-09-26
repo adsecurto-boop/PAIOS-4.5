@@ -225,8 +225,56 @@ function isSemVerGreaterMain(remote, current) {
   }
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
   mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
-    if (!targetUrl.startsWith('file:')) event.preventDefault();
+    const allowedDevNavigation = !app.isPackaged && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(targetUrl);
+    if (!targetUrl.startsWith('file:') && !allowedDevNavigation) event.preventDefault();
+  });
+
+  // Bounded renderer recovery: recover transient Chromium failures without
+  // creating an infinite reload loop that hides a persistent defect.
+  let rendererRecoveryAttempts = 0;
+  let lastRendererRecoveryAt = 0;
+  const tryRendererRecovery = (reason) => {
+    const now = Date.now();
+    if (now - lastRendererRecoveryAt > 60_000) rendererRecoveryAttempts = 0;
+    lastRendererRecoveryAt = now;
+    rendererRecoveryAttempts += 1;
+    console.error(`[PAIOS Electron] Renderer failure (${reason}); attempt ${rendererRecoveryAttempts}.`);
+    if (rendererRecoveryAttempts <= 2 && mainWindow && !mainWindow.isDestroyed()) {
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
+      }, 500);
+      return;
+    }
+    dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'PAIOS could not recover',
+      message: 'The application interface stopped repeatedly.',
+      detail: 'Close and reopen PAIOS. Your locally saved information has not been cleared.',
+      buttons: ['Close PAIOS'],
+      noLink: true,
+    }).finally(() => app.quit());
+  };
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    tryRendererRecovery(details?.reason || 'render-process-gone');
+  });
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
+    if (app.isPackaged && isMainFrame && errorCode !== -3) tryRendererRecovery(`load ${errorCode}: ${errorDescription}`);
+  });
+  mainWindow.on('unresponsive', () => {
+    dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'PAIOS is not responding',
+      message: 'The interface is taking longer than expected.',
+      buttons: ['Wait', 'Reload interface'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    }).then(({ response }) => {
+      if (response === 1 && mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
+    }).catch(() => undefined);
   });
 
   // Build application menu with Live Sync & Auto-Update tools

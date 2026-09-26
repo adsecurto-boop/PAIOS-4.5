@@ -29,6 +29,7 @@ export const ActionHistory: React.FC<ActionHistoryProps> = ({ onClose, onRefresh
   const [filter, setFilter] = useState<FilterCategory>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [undoingId, setUndoingId] = useState<string | null>(null);
+  const [undoError, setUndoError] = useState<string | null>(null);
 
   const loadTransactions = () => {
     setTransactions(ActionStorage.getAllTransactions());
@@ -40,13 +41,14 @@ export const ActionHistory: React.FC<ActionHistoryProps> = ({ onClose, onRefresh
 
   const handleUndo = async (txId: string) => {
     setUndoingId(txId);
+    setUndoError(null);
     try {
       const res = await ActionUndoManager.undoTransaction(txId);
       if (res.success) {
         loadTransactions();
         if (onRefreshAppState) onRefreshAppState();
       } else {
-        alert(res.message);
+        setUndoError(res.message);
       }
     } finally {
       setUndoingId(null);
@@ -147,6 +149,12 @@ export const ActionHistory: React.FC<ActionHistoryProps> = ({ onClose, onRefresh
               </button>
             ))}
           </div>
+          {undoError && (
+            <div role="alert" className="mt-2 p-2.5 bg-red-950/40 border border-red-500/40 rounded-xl text-red-300 text-xs flex items-center justify-between">
+              <span>{undoError}</span>
+              <button onClick={() => setUndoError(null)} className="text-red-400 hover:text-red-200 ml-2 font-medium">Dismiss</button>
+            </div>
+          )}
         </div>
 
         {/* Transactions List */}

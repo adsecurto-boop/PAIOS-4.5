@@ -1,13 +1,13 @@
 import {
   TransactionRecord,
   ProposedAction,
-  ActionType,
+  ScopedSnapshot,
+  generateSecureUUID,
 } from './actionTypes';
 import { ActionStorage } from './actionStorage';
-import { ActionExecutor } from './ActionExecutor';
-import { ActionTransactionManager } from './ActionTransactionManager';
+import { StorageMutationAdapters } from './StorageMutationAdapters';
 import { PAIOSStorage } from '../../storage';
-import { Task, DoseEvent, ExpenseTransaction } from '../../types';
+import { Task, ExpenseTransaction } from '../../types';
 
 export interface UndoResult {
   success: boolean;
@@ -18,7 +18,12 @@ export interface UndoResult {
 
 export class ActionUndoManager {
   /**
-   * Undoes a previously committed transaction by generating and executing a compensating transaction
+   * Undoes a previously committed transaction using WAL discipline:
+   * 1. Journal JOURNALED compensating tx BEFORE any mutation.
+   * 2. Apply exact inverse via StorageMutationAdapters.
+   * 3. Roll back partial undo on failure (original stays COMMITTED per Q3 decision).
+   * 4. Verify final state deep-equals original before-snapshots.
+   * 5. Mark COMMITTED only after verification passes.
    */
   static async undoTransaction(transactionId: string): Promise<UndoResult> {
     const originalTx = ActionStorage.getTransaction(transactionId);
@@ -38,224 +43,353 @@ export class ActionUndoManager {
       return { success: false, error: 'Transaction has already been undone', message: 'This transaction was already undone.' };
     }
 
-    // Step 1: Verify that affected records exist and have not been materially altered
-    const canUndo = this.validateRecordIntegrity(originalTx);
-    if (!canUndo.valid) {
+    if (originalTx.undoStatus === 'BLOCKED') {
+      return { success: false, error: 'Transaction undo is blocked', message: 'Undo operation is blocked for this transaction.' };
+    }
+
+    // Unsupported action types (no-op actions with no mutations)
+    const unsupportedUndoTypes = ['NAVIGATE', 'SEARCH'];
+    if (originalTx.actions.some((a) => unsupportedUndoTypes.includes(a.type))) {
+      return { success: false, error: 'Undo not available for this action type', message: 'Undo unavailable.' };
+    }
+
+    // Step 1: Detect post-commit user modifications or record deletion
+    const integrity = this.validateRecordIntegrity(originalTx);
+    if (!integrity.valid) {
       originalTx.undoStatus = 'BLOCKED';
       ActionStorage.saveTransaction(originalTx);
       return {
         success: false,
-        error: canUndo.reason,
-        message: `Undo unavailable: ${canUndo.reason}`,
+        error: integrity.reason,
+        message: `Undo operation blocked: ${integrity.reason}`,
       };
     }
 
-    // Step 2: Build compensating actions in reverse order
-    const compensatingActions: ProposedAction[] = [];
-    const reversedActions = [...originalTx.actions].reverse();
+    const compTxId = `tx_undo_${generateSecureUUID()}`;
 
-    for (const action of reversedActions) {
-      const comp = this.generateCompensatingAction(action, originalTx);
-      if (!comp) {
-        return {
-          success: false,
-          error: `Action "${action.title}" cannot be undone automatically.`,
-          message: `Automatic Undo is unavailable for ${action.type}. Please adjust it manually.`,
-        };
-      }
-      compensatingActions.push(comp);
+    // Step 2: Capture current state (before-snapshots for the undo operation itself)
+    const beforeSnapshotsForUndo: ScopedSnapshot[] = [];
+    for (const ref of originalTx.affectedRecords) {
+      const adapter = StorageMutationAdapters.getAdapter(ref.storageKey);
+      beforeSnapshotsForUndo.push(adapter.captureSnapshot(ref.recordId));
     }
 
-    // Step 3: Build compensating transaction record
-    const compTx = ActionTransactionManager.buildTransaction(
-      compensatingActions,
-      `Undo: ${originalTx.originalCommand}`
-    );
+    // Step 3: Build compensating transaction and JOURNAL it BEFORE any mutation (WAL)
+    const compTx: TransactionRecord = {
+      id: compTxId,
+      originalCommand: `Undo: ${originalTx.originalCommand}`,
+      actions: [],
+      risk: 'LOW',
+      status: 'JOURNALED',
+      phase: 'JOURNALED',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      sourcePlatform: originalTx.sourcePlatform,
+      sourceDeviceId: originalTx.sourceDeviceId,
+      affectedRecords: [...originalTx.affectedRecords],
+      expectedRevisions: {},
+      beforeSnapshot: beforeSnapshotsForUndo,
+      syncStatus: 'LOCAL',
+      undoStatus: 'NOT_APPLICABLE',
+    };
 
-    // Step 4: Execute compensating transaction
-    const execReport = await ActionTransactionManager.executeTransaction(compTx);
+    try {
+      ActionStorage.saveTransaction(compTx);
+    } catch (walError: any) {
+      return { success: false, error: walError.message, message: 'Undo WAL journal failed.' };
+    }
 
-    if (!execReport.success) {
+    // Step 4: Transition to COMMITTING phase
+    compTx.status = 'COMMITTING';
+    compTx.phase = 'COMMITTING';
+    compTx.stepMarkers = [];
+    ActionStorage.saveTransaction(compTx);
+
+    const appliedSnapshots: ScopedSnapshot[] = [];
+
+    // Step 5: Apply inverse mutations in reverse action order
+    try {
+      for (let i = originalTx.actions.length - 1; i >= 0; i--) {
+        const action = originalTx.actions[i];
+        const snapshotsForAction = this.getSnapshotsForAction(action, originalTx);
+
+        for (const snap of snapshotsForAction) {
+          const adapter = StorageMutationAdapters.getAdapter(snap.storageKey);
+          const rep = adapter.restoreSnapshot(snap);
+          if (!rep.success) {
+            throw new Error(`Failed to restore ${snap.storageKey}:${snap.recordId}: ${rep.error}`);
+          }
+          appliedSnapshots.push(snap);
+        }
+
+        if (!compTx.stepMarkers) compTx.stepMarkers = [];
+        compTx.stepMarkers.push({
+          actionIndex: i,
+          actionId: action.id,
+          completedAt: Date.now(),
+        });
+        ActionStorage.saveTransaction(compTx);
+      }
+    } catch (err: any) {
+      // Undo partially failed — restore the state captured immediately before Undo.
+      let undoRollbackOk = true;
+      const appliedKeys = new Set(appliedSnapshots.map((s) => `${s.storageKey}\u0000${s.recordId}`));
+      const rollbackSnapshots = beforeSnapshotsForUndo.filter((s) =>
+        appliedKeys.has(`${s.storageKey}\u0000${s.recordId}`)
+      );
+      for (const snap of [...rollbackSnapshots].reverse()) {
+        try {
+          const adapter = StorageMutationAdapters.getAdapter(snap.storageKey);
+          const restored = adapter.restoreSnapshot(snap);
+          if (!restored.success) undoRollbackOk = false;
+        } catch {
+          undoRollbackOk = false;
+        }
+      }
+
+      if (undoRollbackOk) {
+        for (const snap of rollbackSnapshots) {
+          const current = StorageMutationAdapters.getAdapter(snap.storageKey).captureSnapshot(snap.recordId);
+          if (
+            current.exists !== snap.exists ||
+            JSON.stringify(current.data) !== JSON.stringify(snap.data) ||
+            JSON.stringify(current.containerData) !== JSON.stringify(snap.containerData)
+          ) {
+            undoRollbackOk = false;
+            break;
+          }
+        }
+      }
+
+      compTx.status = undoRollbackOk ? 'ROLLED_BACK' : 'RECOVERY_REQUIRED';
+      compTx.phase = compTx.status as any;
+      compTx.failureReason = err.message;
+      ActionStorage.saveTransaction(compTx);
+
+      // Original stays COMMITTED (Q3 decision: allows retry)
       return {
         success: false,
-        error: execReport.error,
-        message: `Undo operation failed: ${execReport.message}`,
+        compensatingTransaction: compTx,
+        error: err.message,
+        message: `Undo failed: ${err.message}`,
       };
     }
 
-    // Step 5: Update original transaction record audit status (do not delete it!)
+    // Step 6: Verify final state deep-equals original before-snapshots
+    let verifyOk = true;
+    const failedVerifyStores: string[] = [];
+    for (const snap of originalTx.beforeSnapshot) {
+      const adapter = StorageMutationAdapters.getAdapter(snap.storageKey);
+      const cur = adapter.captureSnapshot(snap.recordId);
+      if (cur.exists !== snap.exists) {
+        verifyOk = false;
+        failedVerifyStores.push(snap.storageKey);
+        continue;
+      }
+      if (snap.exists && JSON.stringify(cur.data) !== JSON.stringify(snap.data)) {
+        verifyOk = false;
+        failedVerifyStores.push(snap.storageKey);
+      }
+      if (snap.containerData !== undefined &&
+          JSON.stringify(cur.containerData) !== JSON.stringify(snap.containerData)) {
+        verifyOk = false;
+        failedVerifyStores.push(snap.storageKey);
+      }
+    }
+
+    if (!verifyOk) {
+      compTx.status = 'RECOVERY_REQUIRED';
+      compTx.phase = 'RECOVERY_REQUIRED';
+      compTx.unresolvedDetails = { stores: Array.from(new Set(failedVerifyStores)), reason: 'Undo verification failed.' };
+      ActionStorage.saveTransaction(compTx);
+      return {
+        success: false,
+        compensatingTransaction: compTx,
+        error: 'Undo verification failed',
+        message: 'Undo committed but verification failed — manual recovery required.',
+      };
+    }
+
+    // Step 7: Commit the undo
+    compTx.status = 'COMMITTED';
+    compTx.phase = 'COMMITTED';
+    compTx.committedAt = Date.now();
+    ActionStorage.saveTransaction(compTx);
+
     originalTx.undoStatus = 'UNDONE';
-    originalTx.undoTransactionId = compTx.id;
+    originalTx.undoTransactionId = compTxId;
     ActionStorage.saveTransaction(originalTx);
 
-    return {
-      success: true,
-      compensatingTransaction: compTx,
-      message: `Successfully undone "${originalTx.originalCommand}"`,
-    };
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('paios_state_change', { detail: { transactionId: compTxId } }));
+    }
+
+    return { success: true, compensatingTransaction: compTx, message: `Successfully undone "${originalTx.originalCommand}"` };
   }
 
+  /**
+   * Validates that records affected by the transaction have not been altered or deleted post-commit.
+   * Matches strictly by record ID — never by title or content.
+   */
   private static validateRecordIntegrity(tx: TransactionRecord): { valid: boolean; reason?: string } {
-    for (const ref of tx.affectedRecords) {
-      const snap = tx.beforeSnapshot.find((s) => s.storageKey === ref.storageKey && s.recordId === ref.recordId);
-      // If record did not exist before and was created, verify it still exists
-      if (snap && !snap.exists) {
-        const currentSnap = ActionExecutor.captureRecordSnapshot(ref.storageKey, ref.recordId);
-        if (!currentSnap.exists) {
-          return { valid: false, reason: `Record #${ref.recordId} in ${ref.storageKey} was already deleted.` };
+    if (tx.afterSnapshot?.length) {
+      for (const expected of tx.afterSnapshot) {
+        const current = StorageMutationAdapters.getAdapter(expected.storageKey).captureSnapshot(expected.recordId);
+        if (
+          current.exists !== expected.exists ||
+          JSON.stringify(current.data) !== JSON.stringify(expected.data) ||
+          JSON.stringify(current.containerData) !== JSON.stringify(expected.containerData)
+        ) {
+          return {
+            valid: false,
+            reason: `Record ${expected.storageKey}:${expected.recordId} changed after the action committed.`,
+          };
+        }
+      }
+      return { valid: true };
+    }
+
+    for (const action of tx.actions) {
+      if (action.type === 'CREATE_TASK') {
+        const tasks = PAIOSStorage.getItem<Task[]>('paios_tasks_v1', []) || [];
+        // Match by ID only — never by title
+        const createdId = tx.affectedRecords.find((r) => r.storageKey === 'paios_tasks_v1')?.recordId;
+        if (!createdId) {
+          return { valid: false, reason: 'Created task record ID not found in transaction.' };
+        }
+        const currentTask = tasks.find((t) => String(t.id) === String(createdId));
+        if (!currentTask) {
+          return { valid: false, reason: 'Created task was already deleted.' };
+        }
+        if (currentTask.revision && currentTask.revision > 1) {
+          return { valid: false, reason: 'Record was modified since execution (post-commit modification).' };
+        }
+      }
+
+      if (action.type === 'UPDATE_TASK' || action.type === 'COMPLETE_TASK' || action.type === 'RESCHEDULE_TASK') {
+        const taskId = (action.payload as any).taskId;
+        const tasks = PAIOSStorage.getItem<Task[]>('paios_tasks_v1', []) || [];
+        const currentTask = tasks.find((t) => String(t.id) === String(taskId));
+        if (!currentTask) {
+          return { valid: false, reason: `Task #${taskId} was deleted.` };
+        }
+      }
+
+      if (action.type === 'RECORD_EXPENSE') {
+        const expenses = PAIOSStorage.getItem<ExpenseTransaction[]>('paios_expenses_v1', []) || [];
+        const expId = tx.affectedRecords.find((r) => r.storageKey === 'paios_expenses_v1')?.recordId;
+        if (expId && !expenses.some((e) => String(e.id) === String(expId))) {
+          return { valid: false, reason: `Expense #${expId} was already removed.` };
+        }
+      }
+
+      if (action.type === 'RECORD_MEDICATION_EVENT') {
+        const doseEventId = (action.payload as any).doseEventId;
+        const doseMap = PAIOSStorage.getItem<Record<string, any[]>>('paios_dose_events_v1', {}) || {};
+        const allDoses = Object.values(doseMap).flat();
+        if (doseEventId && !allDoses.some((d) => String(d.id) === String(doseEventId))) {
+          return { valid: false, reason: `Dose event #${doseEventId} was not found.` };
         }
       }
     }
+
     return { valid: true };
   }
 
-  private static generateCompensatingAction(action: ProposedAction, tx: TransactionRecord): ProposedAction | null {
-    const txId = `tx_undo_${Date.now()}`;
-    const deviceId = action.originDeviceId;
-
+  /**
+   * Returns the exact before-snapshots to restore for a given action.
+   * Uses only ID-based matching from the transaction's beforeSnapshot and affectedRecords.
+   * Never uses title-matching or forced status values.
+   */
+  private static getSnapshotsForAction(action: ProposedAction, tx: TransactionRecord): ScopedSnapshot[] {
     switch (action.type) {
       case 'CREATE_TASK': {
-        // Compensating action: Delete the created task
-        // We find the created record ID from affectedRecords
-        const recId = tx.affectedRecords.find((r) => r.storageKey === 'paios_tasks_v1')?.recordId;
-        const taskId = recId ? parseInt(recId, 10) : (action.payload as any)?.taskId;
-        if (!taskId) return null;
-
-        return {
-          id: `act_undo_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          transactionId: txId,
-          type: 'UPDATE_TASK',
-          payload: { taskId, title: '[DELETED]' },
-          risk: 'LOW',
-          title: `Undo task: delete #${taskId}`,
-          explanation: `Removes task created by transaction ${tx.id}`,
-          sourceText: `Undo: ${action.title}`,
-          affectedRecordIds: [String(taskId)],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
-        };
+        // Delete by pre-allocated ID only — never by title
+        const ref = tx.affectedRecords.find((r) => r.storageKey === 'paios_tasks_v1');
+        if (!ref) return [];
+        const snap = tx.beforeSnapshot.find(
+          (s) => s.storageKey === 'paios_tasks_v1' && s.recordId === ref.recordId
+        );
+        // Before CREATE the task didn't exist — restore to non-existence
+        const result = snap ? [snap] : [{ storageKey: 'paios_tasks_v1', recordId: ref.recordId, data: null, exists: false } as ScopedSnapshot];
+        const timeline = tx.beforeSnapshot.find((s) => s.storageKey === 'paios_timeline_v1');
+        if (timeline) result.push(timeline);
+        return result;
       }
 
-      case 'COMPLETE_TASK': {
-        // Compensating action: Revert task status back to TODO
-        const taskId = (action.payload as any).taskId;
-        const beforeSnap = tx.beforeSnapshot.find((s) => s.recordId === String(taskId));
-        const prevTask = beforeSnap?.data as Task | undefined;
-
-        return {
-          id: `act_undo_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          transactionId: txId,
-          type: 'UPDATE_TASK',
-          payload: { taskId, status: (prevTask?.status as any) || 'TODO', priority: prevTask?.priority || 'NORMAL' },
-          risk: 'LOW',
-          title: `Undo task completion: reopen #${taskId}`,
-          explanation: `Reopens task completed by transaction ${tx.id}`,
-          sourceText: `Undo: ${action.title}`,
-          affectedRecordIds: [String(taskId)],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
-        };
-      }
-
+      case 'COMPLETE_TASK':
+      case 'UPDATE_TASK':
       case 'RESCHEDULE_TASK': {
-        // Compensating action: Restore original dueDateMillis
-        const taskId = (action.payload as any).taskId;
-        const beforeSnap = tx.beforeSnapshot.find((s) => s.recordId === String(taskId));
-        const prevTask = beforeSnap?.data as Task | undefined;
+        // Restore the FULL before-snapshot — never force-set status
+        const taskId = String((action.payload as any).taskId);
+        const snap = tx.beforeSnapshot.find(
+          (s) => s.storageKey === 'paios_tasks_v1' && s.recordId === taskId
+        );
+        return snap ? [snap] : [];
+      }
 
-        return {
-          id: `act_undo_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          transactionId: txId,
-          type: 'RESCHEDULE_TASK',
-          payload: { taskId, dueDateMillis: prevTask?.dueDateMillis || 0 },
-          risk: 'LOW',
-          title: `Undo reschedule: restore #${taskId} due date`,
-          explanation: `Restores task due date`,
-          sourceText: `Undo: ${action.title}`,
-          affectedRecordIds: [String(taskId)],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
-        };
+      case 'RECORD_MEDICATION_EVENT': {
+        // Restore exact dose snapshot AND exact refill snapshot
+        const doseRef = tx.affectedRecords.find((r) => r.storageKey === 'paios_dose_events_v1');
+        const refillRef = tx.affectedRecords.find((r) => r.storageKey === 'paios_refills_v1');
+        const snaps: ScopedSnapshot[] = [];
+        if (doseRef) {
+          const s = tx.beforeSnapshot.find(
+            (s) => s.storageKey === 'paios_dose_events_v1' && s.recordId === doseRef.recordId
+          );
+          if (s) snaps.push(s);
+        }
+        if (refillRef) {
+          const s = tx.beforeSnapshot.find(
+            (s) => s.storageKey === 'paios_refills_v1' && s.recordId === refillRef.recordId
+          );
+          if (s) snaps.push(s);
+        }
+        const timeline = tx.beforeSnapshot.find((s) => s.storageKey === 'paios_timeline_v1');
+        if (timeline) snaps.push(timeline);
+        return snaps;
       }
 
       case 'RECORD_EXPENSE':
       case 'RECORD_INCOME': {
-        // Compensating action: Delete transaction from expenses list
-        const txRec = tx.affectedRecords.find((r) => r.storageKey === 'paios_expenses_v1');
-        const expenseId = txRec?.recordId;
-        if (!expenseId) return null;
-
-        // Custom compensating action: We directly restore beforeSnapshot during undo execution
-        return {
-          id: `act_undo_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          transactionId: txId,
-          type: 'RECORD_EXPENSE',
-          payload: { amount: 0.01, title: `[Reversed ${expenseId}]` },
-          risk: 'LOW',
-          title: `Undo financial entry #${expenseId}`,
-          explanation: `Reverses transaction #${expenseId}`,
-          sourceText: `Undo: ${action.title}`,
-          affectedRecordIds: [expenseId],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
-        };
+        // Restore ALL financial store snapshots
+        return tx.beforeSnapshot.filter((s) =>
+          ['paios_expenses_v1', 'paios_daily_surplus_v1', 'paios_budget_profile_v1'].includes(s.storageKey)
+        );
       }
 
-      case 'RECORD_MEDICATION_EVENT': {
-        // Compensating action: Revert DoseEvent status back to SCHEDULED
-        const doseEventId = (action.payload as any).doseEventId || tx.affectedRecords.find((r) => r.storageKey === 'paios_dose_events_v1')?.recordId;
-        if (!doseEventId) return null;
+      case 'START_FOCUS_SESSION':
+      case 'FINISH_FOCUS_SESSION': {
+        // Restore BOTH active activity AND history store
+        return tx.beforeSnapshot.filter((s) =>
+          ['paios_active_activity_v1', 'paios_activities_v1', 'paios_tasks_v1', 'paios_timeline_v1'].includes(s.storageKey)
+        );
+      }
 
-        return {
-          id: `act_undo_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          transactionId: txId,
-          type: 'RECORD_MEDICATION_EVENT',
-          payload: { doseEventId, status: 'SKIPPED', note: 'Reverted via Undo' },
-          risk: 'LOW',
-          title: `Undo dose event: revert #${doseEventId}`,
-          explanation: `Reverts dose status`,
-          sourceText: `Undo: ${action.title}`,
-          affectedRecordIds: [doseEventId],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
-        };
+      case 'PAUSE_FOCUS_SESSION':
+      case 'RESUME_FOCUS_SESSION': {
+        return tx.beforeSnapshot.filter((s) => s.storageKey === 'paios_active_activity_v1');
+      }
+
+      case 'CREATE_TIMETABLE_BLOCK':
+      case 'REPLAN_DAY': {
+        return tx.beforeSnapshot.filter((s) => s.storageKey === 'paios_timetable_v1');
+      }
+
+      case 'CREATE_QUICK_CAPTURE':
+      case 'CREATE_JOURNAL_ENTRY':
+      case 'RECORD_SYMPTOM':
+      case 'RECORD_VITAL': {
+        // Restore the created record plus the timeline container side effect.
+        return tx.beforeSnapshot.filter((s) =>
+          s.storageKey === 'paios_timeline_v1' ||
+          tx.affectedRecords.some((r) => r.storageKey === s.storageKey && r.recordId === s.recordId)
+        );
       }
 
       default: {
-        // Generic fallback: Use beforeSnapshot to restore
-        const ref = tx.affectedRecords[0];
-        if (!ref) return null;
-        return {
-          id: `act_undo_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          transactionId: txId,
-          type: action.type,
-          payload: action.payload,
-          risk: 'LOW',
-          title: `Undo ${action.title}`,
-          explanation: `Restores snapshot for ${ref.storageKey}`,
-          sourceText: `Undo: ${action.title}`,
-          affectedRecordIds: [ref.recordId],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
-        };
+        // Unsupported: no restoration (undo already blocked above for NAVIGATE/SEARCH)
+        return [];
       }
     }
   }

@@ -16,6 +16,7 @@ import {
   CreateQuickCapturePayload,
   CreateJournalEntryPayload,
   CreateTimetableBlockPayload,
+  generateSecureUUID,
 } from './actionTypes';
 import { ActionRiskPolicy } from './ActionRiskPolicy';
 import { ActionContextResolver, ScopedResolutionContext } from './ActionContextResolver';
@@ -23,11 +24,11 @@ import { getSyncDeviceId, getSyncMetadata } from '../../utils/recordSync';
 import { getTodayDateString } from '../../storage';
 
 function generateActionId(): string {
-  return `act_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  return `act_${generateSecureUUID()}`;
 }
 
 function generateTransactionId(): string {
-  return `tx_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  return `tx_${generateSecureUUID()}`;
 }
 
 function getTomorrowMillis(): number {

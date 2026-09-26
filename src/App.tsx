@@ -62,11 +62,16 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { QuickAddMenu } from './components/QuickAddMenu';
 import { DesktopNavigation } from './components/DesktopNavigation';
 import { ActionRecovery } from './core/actions/ActionRecovery';
+import { RecoveryBanner } from './components/actions/RecoveryBanner';
 import { UniversalCommandBar } from './components/actions/UniversalCommandBar';
 import { UndoToast } from './components/actions/UndoToast';
 import { ActionUndoManager } from './core/actions/ActionUndoManager';
 import { ActionTransactionManager } from './core/actions/ActionTransactionManager';
-import { ProposedAction } from './core/actions/actionTypes';
+import { ActionConfirmationManager } from './core/actions/ActionConfirmationManager';
+import { ActionRiskPolicy } from './core/actions/ActionRiskPolicy';
+import { ActionPreview } from './components/actions/ActionPreview';
+import { ProposedAction, generateSecureUUID } from './core/actions/actionTypes';
+import { ActionPayloadValidator } from './core/actions/ActionPayloadValidator';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>(NavTab.AI);
@@ -100,6 +105,8 @@ export const App: React.FC = () => {
   const [reviews, setReviews] = useState<EveningReview[]>([]);
   const [weeklyReviews, setWeeklyReviews] = useState<WeeklyReview[]>([]);
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
+  const [pendingSafetyError, setPendingSafetyError] = useState<string | null>(null);
+  const [timetableErrorToast, setTimetableErrorToast] = useState<string | null>(null);
   const [settings, setSettings] = useState<UserSettings>(PAIOSStorage.getSettings());
   const [timetable, setTimetable] = useState<AdaptiveTimetableResponse | null>(PAIOSStorage.getAdaptiveTimetable());
   const [isGeneratingTimetable, setIsGeneratingTimetable] = useState(false);
@@ -136,6 +143,7 @@ export const App: React.FC = () => {
   const [showSetupWizardModal, setShowSetupWizardModal] = useState(false);
   const [showUpdatePromptModal, setShowUpdatePromptModal] = useState(false);
   const [showCommandBar, setShowCommandBar] = useState(false);
+  const [pendingAiActions, setPendingAiActions] = useState<ProposedAction[]>([]);
   const [undoToastData, setUndoToastData] = useState<{ transactionId: string; summary: string } | null>(null);
   const [latestServerManifest, setLatestServerManifest] = useState<VersionManifest | null>(null);
   const [pendingSyncConflict, setPendingSyncConflict] = useState<PendingSyncConflict | null>(null);
@@ -823,7 +831,7 @@ export const App: React.FC = () => {
         saveGeneratedTimetable(responseObj);
         reloadState();
       } catch (fallbackErr: any) {
-        alert(`Unable to generate timetable: ${fallbackErr?.message || 'Error'}`);
+        setTimetableErrorToast(`Unable to generate timetable: ${fallbackErr?.message || 'Error'}`);
       }
     } finally {
       setIsGeneratingTimetable(false);
@@ -1050,18 +1058,18 @@ export const App: React.FC = () => {
   // AI Action Execution via Deterministic Action Transaction Engine
   const handleExecuteAiAction = async (actionType: string, actionPayloadJson: string) => {
     try {
+      setPendingSafetyError(null);
       const payload = JSON.parse(actionPayloadJson);
-      const actions: ProposedAction[] = [];
-      const txId = `tx_ai_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const partials: Array<{ type: string, payload: any, title?: string, sourceText?: string }> = [];
+      const txId = `tx_ai_${generateSecureUUID()}`;
+
       const deviceId = typeof localStorage !== 'undefined' ? localStorage.getItem('paios_sync_device_id_v1') || 'device' : 'device';
 
       if (actionType === 'CREATE_TASKS' || payload.type === 'CREATE_TASKS') {
         const proposedTasks = Array.isArray(payload.tasks) ? payload.tasks.slice(0, 10) : [];
-        proposedTasks.forEach((task: any, idx: number) => {
+        proposedTasks.forEach((task: any) => {
           if (!task?.title || typeof task.title !== 'string') return;
-          actions.push({
-            id: `act_${Date.now()}_${idx}`,
-            transactionId: txId,
+          partials.push({
             type: 'CREATE_TASK',
             payload: {
               title: task.title.trim(),
@@ -1069,23 +1077,13 @@ export const App: React.FC = () => {
               priority: (task.priority === 'HIGH' || task.priority === 'CRITICAL' || Boolean(task.isPriority)) ? 'HIGH' : 'NORMAL',
               description: task.description || 'Added from an approved PAIOS AI proposal',
             },
-            risk: 'LOW',
             title: `Add task: "${task.title.trim()}"`,
-            explanation: 'Created from AI proposal',
-            sourceText: 'CREATE_TASKS',
-            affectedRecordIds: [],
-            expectedRevisions: {},
-            requiresConfirmation: false,
-            validationState: 'VALID',
-            createdAt: Date.now(),
-            originDeviceId: deviceId,
+            sourceText: 'CREATE_TASKS'
           });
         });
       } else if (actionType === 'ADD_TASK' || payload.type === 'ADD_TASK' || actionType === 'create_task' || payload.type === 'create_task') {
         const title = payload.title || 'AI Generated Task';
-        actions.push({
-          id: `act_${Date.now()}`,
-          transactionId: txId,
+        partials.push({
           type: 'CREATE_TASK',
           payload: {
             title,
@@ -1093,57 +1091,29 @@ export const App: React.FC = () => {
             priority: (payload.priority === 'HIGH' || payload.priority === 'CRITICAL') ? 'HIGH' : 'NORMAL',
             description: payload.description || 'Added via PAIOS AI',
           },
-          risk: 'LOW',
           title: `Add task: "${title}"`,
-          explanation: 'Created from AI proposal',
-          sourceText: 'ADD_TASK',
-          affectedRecordIds: [],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
+          sourceText: 'ADD_TASK'
         });
       } else if (actionType === 'START_ACTIVITY' || payload.type === 'START_ACTIVITY') {
-        actions.push({
-          id: `act_${Date.now()}`,
-          transactionId: txId,
+        partials.push({
           type: 'START_FOCUS_SESSION',
           payload: {
             name: payload.name || 'AI Session',
             category: payload.category || 'Work',
             note: 'Started via PAIOS AI',
           },
-          risk: 'LOW',
           title: `Start focus session: "${payload.name || 'AI Session'}"`,
-          explanation: 'Started from AI proposal',
-          sourceText: 'START_ACTIVITY',
-          affectedRecordIds: [],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
+          sourceText: 'START_ACTIVITY'
         });
       } else if (actionType === 'SAVE_NOTE' || payload.type === 'SAVE_NOTE') {
-        actions.push({
-          id: `act_${Date.now()}`,
-          transactionId: txId,
+        partials.push({
           type: 'CREATE_QUICK_CAPTURE',
           payload: {
             text: payload.text || 'AI Note',
             category: 'Personal',
           },
-          risk: 'LOW',
           title: `Capture note: "${(payload.text || 'Note').slice(0, 30)}"`,
-          explanation: 'Captured from AI proposal',
-          sourceText: 'SAVE_NOTE',
-          affectedRecordIds: [],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
+          sourceText: 'SAVE_NOTE'
         });
       } else if (
         actionType === 'LOG_DOSE' ||
@@ -1159,7 +1129,7 @@ export const App: React.FC = () => {
           : payload.medicationName
           ? [payload.medicationName]
           : [];
-        const actionStatus: DoseStatus = payload.action || payload.status || 'TAKEN';
+        const actionStatus = payload.action || payload.status || 'TAKEN';
         const noteText = payload.notes || 'Recorded via PAIOS AI Tool Execution';
 
         let targetDose = doseList.find((d) => d.id === medIds[0] || d.medicationId === medIds[0]);
@@ -1171,9 +1141,7 @@ export const App: React.FC = () => {
         }
 
         if (targetDose) {
-          actions.push({
-            id: `act_${Date.now()}`,
-            transactionId: txId,
+          partials.push({
             type: 'RECORD_MEDICATION_EVENT',
             payload: {
               doseEventId: targetDose.id,
@@ -1182,38 +1150,20 @@ export const App: React.FC = () => {
               status: actionStatus === 'SKIPPED' ? 'SKIPPED' : 'TAKEN',
               note: noteText,
             },
-            risk: 'MEDIUM',
             title: `Record ${targetDose.medicationName} as ${actionStatus}`,
-            explanation: 'Recorded via AI proposal',
             sourceText: 'LOG_DOSE',
-            affectedRecordIds: [targetDose.id],
-            expectedRevisions: {},
-            requiresConfirmation: false,
-            validationState: 'VALID',
-            createdAt: Date.now(),
-            originDeviceId: deviceId,
           });
         }
       } else if (actionType === 'LOG_SYMPTOM' || payload.type === 'LOG_SYMPTOM') {
-        actions.push({
-          id: `act_${Date.now()}`,
-          transactionId: txId,
+        partials.push({
           type: 'RECORD_SYMPTOM',
           payload: {
             symptomName: payload.symptomName || 'Symptom',
             severity: payload.severity || 1,
             notes: 'Logged via AI Proposal',
           },
-          risk: 'LOW',
           title: `Record symptom: "${payload.symptomName || 'Symptom'}"`,
-          explanation: 'Recorded via AI proposal',
-          sourceText: 'LOG_SYMPTOM',
-          affectedRecordIds: [],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
-          originDeviceId: deviceId,
+          sourceText: 'LOG_SYMPTOM'
         });
       } else if (
         actionType === 'LOG_TRANSACTION' ||
@@ -1222,38 +1172,60 @@ export const App: React.FC = () => {
         payload.type === 'log_transaction'
       ) {
         const isInflow = payload.type === 'INFLOW' || payload.flowType === 'INFLOW';
-        actions.push({
-          id: `act_${Date.now()}`,
-          transactionId: txId,
+        const amt = Number(payload.amount);
+        partials.push({
           type: isInflow ? 'RECORD_INCOME' : 'RECORD_EXPENSE',
           payload: {
-            amount: Number(payload.amount) || 0,
+            amount: isNaN(amt) ? 0 : amt,
             title: payload.title || payload.description || 'Transaction',
             category: payload.category || (isInflow ? 'OtherIncome' : 'Other'),
           },
-          risk: 'MEDIUM',
-          title: `Record ${isInflow ? 'income' : 'expense'}: ₹${Number(payload.amount) || 0}`,
-          explanation: 'Recorded via AI proposal',
-          sourceText: 'LOG_TRANSACTION',
-          affectedRecordIds: [],
-          expectedRevisions: {},
-          requiresConfirmation: false,
-          validationState: 'VALID',
-          createdAt: Date.now(),
+          title: `Record ${isInflow ? 'income' : 'expense'}: ₹${isNaN(amt) ? 0 : amt}`,
+          sourceText: 'LOG_TRANSACTION'
+        });
+      } else {
+         setPendingSafetyError(`Unknown action type: ${actionType}`);
+         return;
+      }
+
+      if (partials.length === 0) return;
+
+      const actions: Partial<ProposedAction>[] = [];
+      for (const p of partials) {
+        const validation = ActionPayloadValidator.validate(p.type as any, p.payload);
+        if (!validation.isValid) {
+          setPendingSafetyError(`Validation failed for ${p.type}: ${validation.errors.join(', ')}`);
+          return;
+        }
+        actions.push({
+          type: p.type as any,
+          payload: p.payload,
+          title: p.title,
+          sourceText: p.sourceText,
+          explanation: 'AI proposal',
           originDeviceId: deviceId,
         });
       }
 
       if (actions.length > 0) {
-        const tx = ActionTransactionManager.buildTransaction(actions, `AI Action: ${actionType}`);
+        const tx = ActionTransactionManager.buildTransaction(actions as any, `AI Action: ${actionType}`);
+
+        if (tx.requiresConfirmation || tx.risk !== 'LOW') {
+          setPendingAiActions(tx.actions);
+          return;
+        }
+
         const result = await ActionTransactionManager.executeTransaction(tx);
         if (result.success) {
           reloadState();
-          setUndoToastData({ transactionId: tx.id, summary: actions[0]?.title || 'AI Action completed' });
+          setUndoToastData({ transactionId: tx.id, summary: tx.actions[0]?.title || 'AI Action completed' });
+        } else {
+          setPendingSafetyError(result.message || 'Execution failed');
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to parse AI action payload:', e);
+      setPendingSafetyError(`Failed to parse AI action payload: ${e.message}`);
     }
   };
 
@@ -1293,6 +1265,7 @@ export const App: React.FC = () => {
     <div className="android-app-shell min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white overflow-x-hidden w-full max-w-full safe-area-left safe-area-right">
       <div className="flex-1 flex flex-col w-full">
           <div className="flex-1 flex flex-col bg-slate-950">
+            <RecoveryBanner onRefreshAppState={reloadState} />
             {/* Top Header Bar */}
             <TopHeaderBar
               userName={currentUser.displayName || settings.userName || 'PAIOS User'}
@@ -1630,6 +1603,39 @@ export const App: React.FC = () => {
         onRefreshAppState={reloadState}
         onShowUndoToast={(txId, summary) => setUndoToastData({ transactionId: txId, summary })}
       />
+
+      {pendingAiActions.length > 0 && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm Action"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-150"
+        >
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden">
+            <ActionPreview
+              actions={pendingAiActions}
+              onConfirm={async (selected) => {
+                const tx = ActionTransactionManager.buildTransaction(
+                  selected,
+                  selected[0]?.title || 'Confirmed AI Action'
+                );
+                const proof = ActionConfirmationManager.generateProof(tx);
+                const res = await ActionTransactionManager.executeTransaction(tx, proof);
+                setPendingAiActions([]);
+                if (res.success) {
+                  reloadState();
+                  setUndoToastData({
+                    transactionId: tx.id,
+                    summary: selected[0]?.title || 'Action completed',
+                  });
+                }
+              }}
+              onCancel={() => setPendingAiActions([])}
+              onEditCommand={() => setPendingAiActions([])}
+            />
+          </div>
+        </div>
+      )}
 
       {undoToastData && (
         <UndoToast

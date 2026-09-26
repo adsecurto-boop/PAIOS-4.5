@@ -53,14 +53,17 @@ export const VALID_RISKS = new Set<ActionRisk>(['LOW', 'MEDIUM', 'HIGH', 'BLOCKE
 export const VALID_STATUSES = new Set<ActionStatus>([
   'PROPOSED',
   'AWAITING_CONFIRMATION',
+  'JOURNALED',
   'VALIDATING',
   'COMMITTING',
   'COMMITTED',
   'SYNC_PENDING',
   'SYNCED',
   'FAILED',
+  'ROLLING_BACK',
   'ROLLED_BACK',
   'UNDONE',
+  'RECOVERY_REQUIRED',
 ]);
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -697,6 +700,7 @@ export function validateProposedAction(raw: unknown): ValidationResult<ProposedA
     validationState: (obj.validationState as ValidationState) || 'VALID',
     createdAt: isFinitePositiveNumber(obj.createdAt) ? Number(obj.createdAt) : Date.now(),
     originDeviceId: String(obj.originDeviceId || 'local'),
+    preAllocatedId: obj.preAllocatedId ? String(obj.preAllocatedId) : undefined,
   };
 
   return { isValid: true, sanitized, errors: [] };
@@ -715,7 +719,11 @@ export function validateTransactionRecord(raw: unknown): ValidationResult<Transa
   if (!isCleanString(obj.id, 1, 100)) errors.push('TransactionRecord requires valid string id');
   if (!VALID_RISKS.has(obj.risk as ActionRisk)) errors.push('Invalid transaction risk');
   if (!VALID_STATUSES.has(obj.status as ActionStatus)) errors.push('Invalid transaction status');
-  if (!Array.isArray(obj.actions) || obj.actions.length === 0) errors.push('TransactionRecord must contain at least one action');
+  if (!Array.isArray(obj.actions)) {
+    errors.push('TransactionRecord must contain an actions array');
+  } else if (obj.actions.length === 0 && !['RECOVERY_REQUIRED', 'FAILED', 'ROLLED_BACK', 'UNDONE', 'COMMITTING', 'VALIDATING', 'JOURNALED', 'ROLLING_BACK'].includes(String(obj.status))) {
+    errors.push('TransactionRecord must contain at least one action');
+  }
 
   const validatedActions: ProposedAction[] = [];
   if (Array.isArray(obj.actions)) {
@@ -739,6 +747,10 @@ export function validateTransactionRecord(raw: unknown): ValidationResult<Transa
     actions: validatedActions,
     risk: obj.risk as ActionRisk,
     status: obj.status as ActionStatus,
+    phase: obj.phase as any,
+    confirmationProof: obj.confirmationProof as any,
+    stepMarkers: Array.isArray(obj.stepMarkers) ? (obj.stepMarkers as any) : undefined,
+    unresolvedDetails: typeof obj.unresolvedDetails === 'object' && obj.unresolvedDetails ? (obj.unresolvedDetails as any) : undefined,
     createdAt: isFinitePositiveNumber(obj.createdAt) ? Number(obj.createdAt) : Date.now(),
     updatedAt: isFinitePositiveNumber(obj.updatedAt) ? Number(obj.updatedAt) : Date.now(),
     committedAt: isFinitePositiveNumber(obj.committedAt) ? Number(obj.committedAt) : null,
@@ -747,6 +759,7 @@ export function validateTransactionRecord(raw: unknown): ValidationResult<Transa
     affectedRecords: Array.isArray(obj.affectedRecords) ? (obj.affectedRecords as any) : [],
     expectedRevisions: typeof obj.expectedRevisions === 'object' && obj.expectedRevisions ? (obj.expectedRevisions as any) : {},
     beforeSnapshot: Array.isArray(obj.beforeSnapshot) ? (obj.beforeSnapshot as any) : [],
+    afterSnapshot: Array.isArray(obj.afterSnapshot) ? (obj.afterSnapshot as any) : undefined,
     afterSnapshotSummary: obj.afterSnapshotSummary ? String(obj.afterSnapshotSummary) : undefined,
     failureReason: obj.failureReason ? String(obj.failureReason) : null,
     syncStatus: ['LOCAL', 'SYNC_PENDING', 'SYNCED', 'FAILED'].includes(String(obj.syncStatus)) ? (obj.syncStatus as any) : 'LOCAL',

@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ActionTransactionManager } from '../../src/core/actions/ActionTransactionManager';
+import { ActionConfirmationManager } from '../../src/core/actions/ActionConfirmationManager';
 import { ProposedAction, TransactionRecord } from '../../src/core/actions/actionTypes';
 import { PAIOSStorage } from '../../src/storage';
 import { ActionStorage } from '../../src/core/actions/actionStorage';
@@ -11,7 +12,8 @@ import { ActionExecutor } from '../../src/core/actions/ActionExecutor';
 describe('ActionTransactionManager Unit Tests', () => {
   beforeEach(() => {
     PAIOSStorage.clear();
-    ActionStorage.clearLedger();
+    ActionStorage.clearLedger(true);
+    ActionConfirmationManager.reset();
   });
 
   it('atomically executes a multi-action transaction', async () => {
@@ -45,7 +47,8 @@ describe('ActionTransactionManager Unit Tests', () => {
     const tx = ActionTransactionManager.buildTransaction(actions, 'add task alpha and log 120 expense for team coffee');
     tx.id = 'tx-multi-1';
 
-    const report = await ActionTransactionManager.executeTransaction(tx);
+    const proof = ActionConfirmationManager.generateProof(tx);
+    const report = await ActionTransactionManager.executeTransaction(tx, proof);
 
     expect(report.success).toBe(true);
     expect(report.rolledBack).toBe(false);
@@ -96,7 +99,8 @@ describe('ActionTransactionManager Unit Tests', () => {
     const tx = ActionTransactionManager.buildTransaction([action1, action2], 'rollback test');
     tx.id = 'tx-fail-1';
 
-    const report = await ActionTransactionManager.executeTransaction(tx);
+    const proof = ActionConfirmationManager.generateProof(tx);
+    const report = await ActionTransactionManager.executeTransaction(tx, proof);
 
     expect(report.success).toBe(false);
     expect(report.rolledBack).toBe(true);
@@ -182,7 +186,8 @@ describe('ActionTransactionManager Unit Tests', () => {
     };
     PAIOSStorage.setItem('paios_sync_metadata_v2', meta);
 
-    const report = await ActionTransactionManager.executeTransaction(tx);
+    const proof = ActionConfirmationManager.generateProof(tx);
+    const report = await ActionTransactionManager.executeTransaction(tx, proof);
     expect(report.success).toBe(false);
     expect(report.transaction.status).toBe('FAILED');
     expect(report.error).toContain('Concurrency conflict');

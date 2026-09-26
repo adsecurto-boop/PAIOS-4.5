@@ -1001,10 +1001,10 @@ export const storage = {
   getTodayPriorities(): Task[] {
     return this.getTasks().filter((t) => t.isPriorityPin && t.status !== 'COMPLETED').slice(0, 3);
   },
-  addTask(title: string, category: string = 'Work', isPriority: boolean = false, description: string = ''): Task {
+  addTask(title: string, category: string = 'Work', isPriority: boolean = false, description: string = '', id?: number): Task {
     const tasks = this.getTasks();
     const newTask: Task = {
-      id: Date.now(),
+      id: id !== undefined ? id : Date.now(),
       title,
       description,
       priority: isPriority ? 'HIGH' : 'NORMAL',
@@ -1056,14 +1056,14 @@ export const storage = {
   getActiveActivity(): ActivityLog | null {
     return load<ActivityLog | null>(STORAGE_KEYS.ACTIVE_ACTIVITY, null);
   },
-  startActivity(name: string, category: string = 'Work', note?: string | null): ActivityLog {
+  startActivity(name: string, category: string = 'Work', note?: string | null, id?: number): ActivityLog {
     const current = this.getActiveActivity();
     if (current) {
       this.finishActivity(current.id);
     }
 
     const newActivity: ActivityLog = {
-      id: Date.now(),
+      id: id !== undefined ? id : Date.now(),
       activityName: name,
       category,
       startTimeMillis: Date.now(),
@@ -1173,11 +1173,11 @@ export const storage = {
     const startOfDay = getStartOfDayMillis();
     return this.getAllTimeline().filter((e) => e.timestampMillis >= startOfDay);
   },
-  addTimelineEntry(entry: Omit<TimelineEntry, 'id'>): TimelineEntry {
+  addTimelineEntry(entry: Omit<TimelineEntry, 'id'>, id?: number): TimelineEntry {
     const timeline = this.getAllTimeline();
     const newEntry: TimelineEntry = {
       ...entry,
-      id: Date.now() + Math.floor(Math.random() * 1000),
+      id: id !== undefined ? id : Date.now() + Math.floor(Math.random() * 1000),
     };
     timeline.unshift(newEntry);
     save(STORAGE_KEYS.TIMELINE, timeline);
@@ -1196,11 +1196,11 @@ export const storage = {
     const startOfDay = getStartOfDayMillis();
     return this.getAllCaptures().filter((c) => c.createdAtMillis >= startOfDay);
   },
-  addQuickCapture(text: string, category: string = 'Personal'): QuickCapture {
+  addQuickCapture(text: string, category: string = 'Personal', id?: number): QuickCapture {
     const captures = this.getAllCaptures();
     const suggestion = classifyCapture(text);
     const newCapture: QuickCapture = {
-      id: Date.now(),
+      id: id !== undefined ? id : Date.now(),
       text,
       category,
       tags: '',
@@ -1221,8 +1221,8 @@ export const storage = {
 
     return newCapture;
   },
-  addQuickCaptureNote(text: string, category: string = 'Personal'): QuickCapture {
-    return this.addQuickCapture(text, category);
+  addQuickCaptureNote(text: string, category: string = 'Personal', id?: number): QuickCapture {
+    return this.addQuickCapture(text, category, id);
   },
   deleteQuickCapture(id: number): void {
     const captures = this.getAllCaptures().filter((c) => c.id !== id);
@@ -1307,10 +1307,10 @@ export const storage = {
   getJournalEntries(): JournalEntry[] {
     return load(STORAGE_KEYS.JOURNAL, initialJournal);
   },
-  addJournalEntry(title: string, content: string, moodScore: number = 5, category: string = 'Personal', tags: string = ''): JournalEntry {
+  addJournalEntry(title: string, content: string, moodScore: number = 5, category: string = 'Personal', tags: string = '', id?: number): JournalEntry {
     const journal = this.getJournalEntries();
     const newEntry: JournalEntry = {
-      id: Date.now(),
+      id: id !== undefined ? id : Date.now(),
       title,
       content,
       tags,
@@ -1674,11 +1674,11 @@ export const storage = {
   getVitalSigns(): VitalSign[] {
     return load(STORAGE_KEYS.VITALS, initialVitals);
   },
-  logVitalSign(vital: Omit<VitalSign, 'id' | 'timestampMillis'>): VitalSign {
+  logVitalSign(vital: Omit<VitalSign, 'id' | 'timestampMillis'>, id?: string): VitalSign {
     const list = this.getVitalSigns();
     const newVital: VitalSign = {
       ...vital,
-      id: `vital_${Date.now()}`,
+      id: id || `vital_${Date.now()}`,
       timestampMillis: Date.now(),
     };
     list.unshift(newVital);
@@ -1716,6 +1716,12 @@ export const storage = {
     let modified = false;
 
     if (!dateEvents) {
+      if (!dateStr) {
+        const availableDates = Object.keys(allEvents).sort().reverse();
+        if (availableDates.length > 0 && allEvents[availableDates[0]]?.length) {
+          return allEvents[availableDates[0]];
+        }
+      }
       dateEvents = [];
       meds.forEach((m) => {
         m.scheduleTimes.forEach((time) => {
@@ -1728,7 +1734,7 @@ export const storage = {
             scheduledTime: cleanTime,
             scheduledDateString: date,
             status: 'SCHEDULED',
-            actualTakenTimeMillis: null,
+            actualTakenTimeMillis: undefined,
             note: null,
           });
         });
@@ -1765,7 +1771,7 @@ export const storage = {
               scheduledTime: cleanTime,
               scheduledDateString: date,
               status: 'SCHEDULED',
-              actualTakenTimeMillis: null,
+              actualTakenTimeMillis: undefined,
               note: null,
             });
             modified = true;
@@ -1780,12 +1786,23 @@ export const storage = {
 
     return allEvents[date] || [];
   },
-  logDoseEvent(doseId: string, status: DoseStatus, note?: string): DoseEvent | null {
-    const date = getTodayDateString();
+  logDoseEvent(doseId: string, status: DoseStatus, note?: string, targetDate?: string): DoseEvent | null {
+    let date = targetDate || getTodayDateString();
     const allEvents: Record<string, DoseEvent[]> = load(STORAGE_KEYS.DOSE_EVENTS, {});
-    const todayEvents = allEvents[date] || this.getDoseEvents(date);
+    let todayEvents = allEvents[date] || (targetDate ? [] : this.getDoseEvents(date));
     
-    const dose = todayEvents.find((d) => d.id === doseId);
+    let dose = todayEvents.find((d) => d.id === doseId);
+    if (!dose) {
+      for (const [dKey, list] of Object.entries(allEvents)) {
+        const found = list.find((d) => d.id === doseId);
+        if (found) {
+          date = dKey;
+          todayEvents = list;
+          dose = found;
+          break;
+        }
+      }
+    }
     if (!dose) return null;
 
     // 1. Single-action terminal locking guard:
