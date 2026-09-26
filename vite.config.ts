@@ -16,9 +16,10 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? './' : '/',
   plugins: [react(), tailwindcss()],
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version || '4.8.0'),
+    __APP_VERSION__: JSON.stringify(pkg.version || '4.8.1'),
     __GIT_COMMIT__: JSON.stringify(gitCommit),
     __BUILD_TIMESTAMP__: Date.now(),
+    __BUILD_NUMBER__: JSON.stringify(process.env.BUILD_NUMBER || '13'),
   },
   server: {
     host: '0.0.0.0',

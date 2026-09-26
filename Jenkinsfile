@@ -72,7 +72,7 @@ pipeline {
                 Compress-Archive -Path "dist/*" -DestinationPath "dist/PAIOS-Web-Dist.zip" -Force
                 $manifest = @"
 {
-  "version": "4.8.0",
+  "version": "4.8.1",
   "buildNumber": "$($env:BUILD_NUMBER)",
   "buildTimestamp": $([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()),
   "gitCommit": "$($env:GIT_COMMIT)",
@@ -84,13 +84,13 @@ pipeline {
       "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist-electron/PAIOS-Desktop-Windows-x64.zip",
       "webDistUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/PAIOS-Web-Dist.zip",
       "filename": "PAIOS-Desktop-Windows-x64.zip",
-      "version": "4.8.0"
+      "version": "4.8.1"
     },
     "android": {
       "url": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/release/app-release.apk",
       "debugUrl": "http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/android/app/build/outputs/apk/debug/app-debug.apk",
       "filename": "app-release.apk",
-      "version": "4.8.0"
+      "version": "4.8.1"
     }
   }
 }
@@ -250,6 +250,13 @@ pipeline {
 
                         // 4. Compile Android APKs via Gradle (assembleDebug & assembleRelease)
                         dir('android') {
+                            powershell '''
+                            $gradleFile = 'app/build.gradle'
+                            $gradleText = Get-Content $gradleFile -Raw
+                            $gradleText = $gradleText -replace 'versionCode\s+\d+', "versionCode $($env:BUILD_NUMBER)"
+                            Set-Content -Path $gradleFile -Value $gradleText -Encoding utf8
+                            Write-Output "[INFO] Android versionCode set to Jenkins build $($env:BUILD_NUMBER)"
+                            '''
                             powershell '''
                             # Fresh Windows agents do not always have the standard debug
                             # keystore. Create it only when a production keystore was not

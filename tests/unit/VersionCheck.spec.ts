@@ -16,8 +16,8 @@ describe('VersionCheck Unit Tests (Downgrade Prevention & SemVer Enforcement)', 
     vi.restoreAllMocks();
   });
 
-  it('reports current client version as 4.8.0', () => {
-    expect(CLIENT_VERSION.version).toBe('4.8.0');
+  it('reports current client version as 4.8.1', () => {
+    expect(CLIENT_VERSION.version).toBe('4.8.1');
   });
 
   it('suppresses update notification when remote version is older (4.5.7)', async () => {
@@ -45,17 +45,17 @@ describe('VersionCheck Unit Tests (Downgrade Prevention & SemVer Enforcement)', 
     unsubscribe();
   });
 
-  it('suppresses update notification when remote version matches running version (4.8.0)', async () => {
+  it('triggers an update for a newer verified CI build of the same version', async () => {
     const sameManifest: VersionManifest = {
-      version: '4.8.0',
-      buildNumber: '13',
+      version: '4.8.1',
+      buildNumber: '14',
       buildTimestamp: Date.now(),
       gitCommit: 'latest_hash',
       releaseNotes: 'Current release',
     };
 
     vi.spyOn(UpdateService, 'checkForUpdates').mockResolvedValueOnce({
-      updateAvailable: false,
+      updateAvailable: true,
       manifest: sameManifest,
       currentVersion: CLIENT_VERSION,
     });
@@ -64,16 +64,16 @@ describe('VersionCheck Unit Tests (Downgrade Prevention & SemVer Enforcement)', 
     const unsubscribe = onVersionUpdateAvailable(listener);
 
     const result = await checkForAppUpdates();
-    expect(result.updateAvailable).toBe(false);
-    expect(listener).not.toHaveBeenCalled();
+    expect(result.updateAvailable).toBe(true);
+    expect(listener).toHaveBeenCalledWith(sameManifest);
 
     unsubscribe();
   });
 
-  it('triggers update notification when remote version is strictly newer (4.8.1)', async () => {
+  it('triggers update notification when remote version is strictly newer (4.8.2)', async () => {
     const newerManifest: VersionManifest = {
-      version: '4.8.1',
-      buildNumber: '12',
+      version: '4.8.2',
+      buildNumber: '14',
       buildTimestamp: Date.now() + 10000,
       gitCommit: 'newer_hash',
       releaseNotes: 'Newer release',

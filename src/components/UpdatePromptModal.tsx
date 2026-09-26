@@ -20,7 +20,7 @@ import {
   DownloadProgress,
   CURRENT_CLIENT_VERSION,
   getRunningPlatform,
-  isSemVerGreater,
+  isReleaseManifestNewer,
 } from '../services/UpdateService';
 
 interface UpdatePromptModalProps {
@@ -46,12 +46,12 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
     (typeof window !== 'undefined' ? localStorage.getItem('paios_active_version') : null) ||
     CURRENT_CLIENT_VERSION.version;
 
-  // STRICT SEMVER SUPPRESSION: Suppress modal completely if remote is not strictly greater
+  const runningManifest = { ...CURRENT_CLIENT_VERSION, version: runningVersion };
   if (
     !isOpen ||
     !serverManifest ||
     !serverManifest.version ||
-    !isSemVerGreater(serverManifest.version, runningVersion)
+    !isReleaseManifestNewer(serverManifest, runningManifest)
   ) {
     return null;
   }

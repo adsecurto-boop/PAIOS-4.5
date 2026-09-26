@@ -7,6 +7,7 @@ import {
   DownloadProgress,
   compareSemVer,
   isSemVerGreater,
+  isReleaseManifestNewer,
 } from '../../src/services/UpdateService';
 
 describe('UpdateService Unit Tests', () => {
@@ -38,6 +39,12 @@ describe('UpdateService Unit Tests', () => {
     expect(compareSemVer('4.6.1', '4.6.1')).toBe(0);
     expect(compareSemVer('4.6.2', '4.6.1')).toBe(1);
     expect(compareSemVer('4.5.7', '4.6.1')).toBe(-1);
+  });
+
+  it('uses a higher build number to update within the same semantic version', () => {
+    expect(isReleaseManifestNewer({ version: '4.8.0', buildNumber: '13' }, { version: '4.8.0', buildNumber: '12' })).toBe(true);
+    expect(isReleaseManifestNewer({ version: '4.8.0', buildNumber: '12' }, { version: '4.8.0', buildNumber: '12' })).toBe(false);
+    expect(isReleaseManifestNewer({ version: '4.7.9', buildNumber: '999' }, { version: '4.8.0', buildNumber: '12' })).toBe(false);
   });
 
   it('checks for updates and parses strictly newer version manifest', async () => {

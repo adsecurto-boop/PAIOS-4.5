@@ -2,12 +2,12 @@ import {
   UpdateService,
   VersionManifest,
   CURRENT_CLIENT_VERSION,
-  isSemVerGreater,
+  isReleaseManifestNewer,
   isDevelopmentEnvironment,
 } from '../services/UpdateService';
 
 export type { VersionManifest, PlatformAssetInfo, DownloadProgress } from '../services/UpdateService';
-export { CURRENT_CLIENT_VERSION, isSemVerGreater, compareSemVer, isDevelopmentEnvironment } from '../services/UpdateService';
+export { CURRENT_CLIENT_VERSION, isSemVerGreater, isReleaseManifestNewer, compareSemVer, isDevelopmentEnvironment } from '../services/UpdateService';
 
 // Re-export CLIENT_VERSION for backward compatibility
 export const CLIENT_VERSION: VersionManifest = CURRENT_CLIENT_VERSION;
@@ -25,7 +25,7 @@ export function onVersionUpdateAvailable(callback: UpdateCallback): () => void {
   updateListeners.add(callback);
   if (
     latestAvailableManifest &&
-    isSemVerGreater(latestAvailableManifest.version, CURRENT_CLIENT_VERSION.version)
+    isReleaseManifestNewer(latestAvailableManifest, CURRENT_CLIENT_VERSION)
   ) {
     callback(latestAvailableManifest);
   }
@@ -81,7 +81,7 @@ export async function checkForAppUpdates(): Promise<{ updateAvailable: boolean; 
     if (
       result.updateAvailable &&
       result.manifest?.version &&
-      isSemVerGreater(result.manifest.version, CURRENT_CLIENT_VERSION.version)
+      isReleaseManifestNewer(result.manifest, CURRENT_CLIENT_VERSION)
     ) {
       latestAvailableManifest = result.manifest;
       updateListeners.forEach((cb) => cb(result.manifest));

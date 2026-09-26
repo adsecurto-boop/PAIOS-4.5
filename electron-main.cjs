@@ -11,6 +11,22 @@ if (process.platform === 'win32') {
 
 let mainWindow;
 
+function getBundledBuildNumber() {
+  try {
+    const manifestPath = path.join(__dirname, 'dist', 'version.json');
+    if (fs.existsSync(manifestPath)) return Number(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).buildNumber || 0);
+  } catch (error) {
+    console.warn('[PAIOS Updater] Could not read bundled build number:', error);
+  }
+  return 13;
+}
+
+function isReleaseNewerMain(targetVersion, targetBuild, currentVersion, currentBuild) {
+  return isSemVerGreaterMain(targetVersion, currentVersion) || (
+    String(targetVersion) === String(currentVersion) && Number(targetBuild || 0) > Number(currentBuild || 0)
+  );
+}
+
 // User configuration file path for auto-update & live sync
 const configPath = path.join(app.getPath('userData'), 'paios-config.json');
 const DEFAULT_LIVE_URL = '';
@@ -75,7 +91,7 @@ function createWindow() {
       if (fs.existsSync(activeVersionFile)) {
         const active = JSON.parse(fs.readFileSync(activeVersionFile, 'utf8'));
         const staged = active.stagedExecutable;
-        if (staged && fs.existsSync(staged) && isSemVerGreaterMain(active.version, app.getVersion())) {
+        if (staged && fs.existsSync(staged) && isReleaseNewerMain(active.version, active.buildNumber, app.getVersion(), getBundledBuildNumber())) {
           const resolved = fs.realpathSync(staged);
           const relative = path.relative(allowedRoot, resolved);
           if (!relative.startsWith('..') && !path.isAbsolute(relative) && resolved.toLowerCase() !== process.execPath.toLowerCase()) {
@@ -153,7 +169,7 @@ function isSemVerGreaterMain(remote, current) {
     const userDistIndex = path.join(userDistDir, 'index.html');
     const bundledDistIndex = path.join(__dirname, 'dist', 'index.html');
     const activeVersionFile = path.join(app.getPath('userData'), 'active_version.json');
-    const currentVersion = app.getVersion() || '4.8.0';
+    const currentVersion = app.getVersion() || '4.8.1';
 
     // Development & Unpackaged Guard:
     // When running locally from workspace, ALWAYS prioritize compiled workspace dist.
@@ -379,7 +395,7 @@ ipcMain.handle('show-desktop-notification', async (event, data) => {
 
 // IPC Handlers for In-App Live Sync & Auto-Update Controls
 ipcMain.handle('paios:get-version', () => {
-  return app.getVersion() || '4.8.0';
+  return app.getVersion() || '4.8.1';
 });
 
 ipcMain.handle('paios:get-config', () => {
@@ -562,7 +578,7 @@ ipcMain.handle('paios:get-user-data-path', async () => {
 });
 
 // IPC Handler: Apply Windows Desktop Update
-ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuffer, gitCommit, sha256 }) => {
+ipcMain.handle('paios:apply-update', async (event, { version, buildNumber, filePath, fileBuffer, gitCommit, sha256 }) => {
   if (event.sender !== mainWindow?.webContents) return { success: false, error: 'Untrusted IPC sender', updated: false };
   // SECURITY & DECOUPLING GUARD:
   // If running in development, or if the app is unpackaged, strictly refuse to apply updates.
@@ -572,10 +588,11 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
     return { success: false, error: 'Updater disabled in development/workspace mode', updated: false };
   }
 
-  const currentAppVersion = app.getVersion() || '4.8.0';
-  if (!isSemVerGreaterMain(version, currentAppVersion)) {
-    console.warn(`[PAIOS Updater] Blocked: Target version (${version}) is not strictly newer than current (${currentAppVersion}).`);
-    return { success: false, error: 'Downgrade or duplicate version blocked by SemVer policy', updated: false };
+  const currentAppVersion = app.getVersion() || '4.8.1';
+  const currentBuildNumber = getBundledBuildNumber();
+  if (!isReleaseNewerMain(version, buildNumber, currentAppVersion, currentBuildNumber)) {
+    console.warn(`[PAIOS Updater] Blocked: Target ${version} build ${buildNumber} is not newer than ${currentAppVersion} build ${currentBuildNumber}.`);
+    return { success: false, error: 'Downgrade or duplicate build blocked by release policy', updated: false };
   }
   if (!/^[a-f0-9]{64}$/i.test(String(sha256 || ''))) {
     return { success: false, error: 'Update manifest must include a SHA-256 checksum', updated: false };
@@ -654,7 +671,8 @@ ipcMain.handle('paios:apply-update', async (event, { version, filePath, fileBuff
       fs.writeFileSync(
         path.join(app.getPath('userData'), 'active_version.json'),
         JSON.stringify({
-          version: version || '4.8.0',
+          version: version || '4.8.1',
+          buildNumber: Number(buildNumber || 0),
           gitCommit: gitCommit || 'latest',
           appliedAt: Date.now(),
           sourcePackage: zipToApply,

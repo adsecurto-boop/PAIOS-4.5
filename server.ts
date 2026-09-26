@@ -410,11 +410,11 @@ app.post('/assistant/test', requireAuth, async (req, res) => {
 
 // --- IN-APP SOFTWARE UPDATE & VERSION ENDPOINTS ---
 const dynamicVersionManifest: any = {
-  version: '4.8.0',
-  buildNumber: '12',
+  version: '4.8.1',
+  buildNumber: '13',
   buildTimestamp: Date.now(),
   gitCommit: 'c3249c0',
-  releaseNotes: 'PAIOS v4.8.0: Safety-first Universal Action Assistant',
+  releaseNotes: 'PAIOS v4.8.1: Reliable cross-platform automatic updates',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',

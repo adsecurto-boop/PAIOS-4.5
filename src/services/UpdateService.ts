@@ -14,6 +14,7 @@ const NativeAppUpdater = registerPlugin<NativeAppUpdaterPlugin>('PaiosAppUpdater
 declare const __APP_VERSION__: string | undefined;
 declare const __GIT_COMMIT__: string | undefined;
 declare const __BUILD_TIMESTAMP__: number | undefined;
+declare const __BUILD_NUMBER__: string | undefined;
 
 export interface PlatformAssetInfo {
   url: string;
@@ -92,6 +93,14 @@ export function isSemVerGreater(remote: string, current: string): boolean {
   return compareSemVer(remote, current) > 0;
 }
 
+export function isReleaseManifestNewer(remote: Pick<VersionManifest, 'version' | 'buildNumber'>, current: Pick<VersionManifest, 'version' | 'buildNumber'>): boolean {
+  const versionComparison = compareSemVer(remote.version, current.version);
+  if (versionComparison !== 0) return versionComparison > 0;
+  const remoteBuild = Number(remote.buildNumber || 0);
+  const currentBuild = Number(current.buildNumber || 0);
+  return Number.isFinite(remoteBuild) && remoteBuild > currentBuild;
+}
+
 /**
  * Check whether the running environment is local development
  */
@@ -120,7 +129,7 @@ const getStoredActiveVersion = (): string | null => {
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem('paios_active_version');
-      const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.8.0';
+      const compiled = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.8.1';
       // Never honor a stored version if it is older than or equal to the compiled code version!
       if (stored && isSemVerGreater(stored, compiled)) {
         return stored;
@@ -136,11 +145,11 @@ const getStoredActiveVersion = (): string | null => {
 
 // Current client runtime version metadata
 export const CURRENT_CLIENT_VERSION: VersionManifest = {
-  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.8.0'),
-  buildNumber: '12',
+  version: getStoredActiveVersion() || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '4.8.1'),
+  buildNumber: typeof __BUILD_NUMBER__ !== 'undefined' ? __BUILD_NUMBER__ : '13',
   buildTimestamp: typeof __BUILD_TIMESTAMP__ !== 'undefined' ? __BUILD_TIMESTAMP__ : Date.now(),
   gitCommit: getStoredActiveCommit() || (typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : 'c3249c0'),
-  releaseNotes: 'PAIOS v4.8.0: Safety-first Universal Action Assistant',
+  releaseNotes: 'PAIOS v4.8.1: Reliable cross-platform automatic updates',
   platforms: {
     windows: {
       url: 'https://github.com/adsecurto-boop/PAIOS-4.5/releases/download/latest/PAIOS-Desktop-Windows-x64.zip',
@@ -344,17 +353,21 @@ export class UpdateService {
     // 3. Fetch latest GitHub Commits Atom Feed for real-time commit metadata
     latestCommitInfo = await this.fetchLatestGitHubCommit();
 
-    // 4. Try local Jenkins Server if available
+    // 4. Try Jenkins. Android emulators reach the host through 10.0.2.2;
+    // desktop clients use loopback. Physical devices can supply a custom URL.
     if (!fetchedManifest) {
-      try {
-        const jenkinsRes = await fetch(
-          'http://localhost:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/version.json?t=' +
-            Date.now()
-        );
-        if (jenkinsRes.ok) {
-          fetchedManifest = await jenkinsRes.json();
-        }
-      } catch (err) {}
+      const jenkinsHosts = getRunningPlatform() === 'android'
+        ? ['10.0.2.2', 'localhost']
+        : ['localhost', '127.0.0.1'];
+      for (const host of jenkinsHosts) {
+        try {
+          const jenkinsRes = await fetch(`http://${host}:8080/job/PAIOS-MultiPlatform-Pipeline/lastSuccessfulBuild/artifact/dist/version.json?t=${Date.now()}`);
+          if (jenkinsRes.ok) {
+            fetchedManifest = await jenkinsRes.json();
+            break;
+          }
+        } catch (err) {}
+      }
     }
 
     // 5. Try local Express API /api/version
@@ -370,7 +383,7 @@ export class UpdateService {
     }
 
     // Compose final remote manifest
-    const targetVersion = fetchedManifest?.version || current.version || '4.8.0';
+    const targetVersion = fetchedManifest?.version || current.version || '4.8.1';
     const targetCommit =
       latestCommitInfo?.shortSha ||
       fetchedManifest?.gitCommit ||
@@ -390,7 +403,7 @@ export class UpdateService {
       releaseNotes:
         latestCommitInfo?.title ||
         fetchedManifest?.releaseNotes ||
-        'PAIOS v4.8.0: Safety-first Universal Action Assistant',
+        'PAIOS v4.8.1: Reliable cross-platform automatic updates',
       platforms: {
         windows: {
           url:
@@ -416,14 +429,11 @@ export class UpdateService {
     this.cachedManifest = manifest;
 
     const runningCommit = (getStoredActiveCommit() || current.gitCommit || '').trim();
-    const runningVersion = (getStoredActiveVersion() || current.version || '4.8.0').trim();
+    const runningVersion = (getStoredActiveVersion() || current.version || '4.8.1').trim();
 
-    // STRICT SEMVER GATING:
-    // Only prompt when the published semantic version is strictly newer.
-    // Commit hash differences alone never trigger an update prompt.
-    // Commit hash differences alone MUST NEVER trigger an update prompt!
-    const isStrictlyNewerVersion = Boolean(targetVersion && isSemVerGreater(targetVersion, runningVersion));
-    const updateAvailable = isStrictlyNewerVersion;
+    // Release identity is SemVer + monotonic CI build number. Commit hash
+    // differences alone remain insufficient to trigger an update.
+    const updateAvailable = isReleaseManifestNewer(manifest, { ...current, version: runningVersion });
 
     const activeCurrent: VersionManifest = {
       ...current,
@@ -672,6 +682,7 @@ export class UpdateService {
 
           const result = await electronAPI.applyUpdate({
             version: manifest.version,
+            buildNumber: manifest.buildNumber,
             gitCommit: manifest.gitCommit,
             filePath: typeof downloadedData === 'string' ? downloadedData : undefined,
             fileBuffer: bufferArray,
@@ -682,7 +693,9 @@ export class UpdateService {
         }
       } catch (err) {
         console.warn('[UpdateService] Electron apply-update IPC failed:', err);
+        throw err instanceof Error ? err : new Error('Windows update could not be applied');
       }
+      throw new Error('Windows updater bridge is unavailable. Reinstall the latest desktop build once to repair it.');
     }
 
     // 2. Android APK Installation Trigger
