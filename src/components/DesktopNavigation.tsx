@@ -3,10 +3,9 @@ import { BarChart3, BookOpen, Brain, CheckCircle2, HeartPulse, History, Layers, 
 import { NavTab } from '../types';
 
 interface Props { activeTab: NavTab; onSelectTab: (tab: NavTab) => void; onOpenCapture: () => void; }
-const primary = [{ tab: NavTab.TODAY, label: 'Today', icon: Sun }, { tab: NavTab.TIMELINE, label: 'Plan', icon: History }, { tab: NavTab.INSIGHTS, label: 'Insights', icon: BarChart3 }];
+const primary = [{ tab: NavTab.TODAY, label: 'Today', icon: Sun }, { tab: NavTab.TIMELINE, label: 'Plan', icon: History }, { tab: NavTab.INSIGHTS, label: 'Insights', icon: BarChart3 }, { tab: NavTab.AI, label: 'Assistant', icon: Sparkles }];
 const spaces = [
   { tab: NavTab.TASKS, label: 'Tasks', detail: 'Commitments and priorities', icon: CheckCircle2 },
-  { tab: NavTab.AI, label: 'Assistant', detail: 'Ask and act safely', icon: Sparkles },
   { tab: NavTab.HEALTH, label: 'Health', detail: 'Medication and wellbeing', icon: HeartPulse },
   { tab: NavTab.JOURNAL, label: 'Journal', detail: 'Notes and reflection', icon: BookOpen },
   { tab: NavTab.LEARN, label: 'Learn', detail: 'Study and recall', icon: Brain },

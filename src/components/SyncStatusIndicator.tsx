@@ -41,22 +41,39 @@ export const SyncStatusIndicator: React.FC<{ userId?: string }> = ({ userId }) =
     }
 
     setSyncState((current) => ({ ...current, status: 'syncing', message: undefined }));
-    const queueResult = await OfflineSyncManager.flushQueue();
-    const remaining = OfflineSyncManager.getQueue().length;
-    setQueuedChanges(remaining);
+    try {
+      const queueResult = await OfflineSyncManager.flushQueue();
+      const remaining = OfflineSyncManager.getQueue().length;
+      setQueuedChanges(remaining);
 
-    if (!queueResult.success) {
+      if (!queueResult.success) {
+        setSyncState({
+          status: 'error',
+          queuedChanges: remaining,
+          message: `${remaining} local change${remaining === 1 ? '' : 's'} still waiting. Your device copy is safe.`,
+        });
+        return;
+      }
+
+      if (!userId) {
+        setSyncState({ status: 'local', queuedChanges: remaining, message: 'Saved on this device' });
+        return;
+      }
+
+      const cloudSynced = await syncLocalToCloud(userId);
+      if (cloudSynced) {
+        setSyncState({ status: 'synced', queuedChanges: remaining, lastSyncedAt: Date.now() });
+      } else {
+        setSyncState({ status: 'error', queuedChanges: remaining, message: 'Cloud sync could not complete. Your device copy is safe.' });
+      }
+    } catch (error) {
+      const remaining = OfflineSyncManager.getQueue().length;
+      setQueuedChanges(remaining);
       setSyncState({
         status: 'error',
         queuedChanges: remaining,
-        message: `${remaining} local change${remaining === 1 ? '' : 's'} still waiting to sync`,
+        message: error instanceof Error ? error.message : 'Sync could not complete. Your device copy is safe.',
       });
-      return;
-    }
-
-    const cloudSynced = userId ? await syncLocalToCloud(userId) : true;
-    if (cloudSynced) {
-      setSyncState({ status: 'synced', queuedChanges: remaining, lastSyncedAt: Date.now() });
     }
   };
 
@@ -82,6 +99,10 @@ export const SyncStatusIndicator: React.FC<{ userId?: string }> = ({ userId }) =
         <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Syncing{queuedChanges ? ` ${queuedChanges}` : ''}
       </span>
     );
+  }
+
+  if (syncState.status === 'local') {
+    return <span className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] font-semibold text-slate-300" title="Changes are safely saved on this device. Sign in to enable cloud sync."><CheckCircle2 className="h-3.5 w-3.5" /> Saved locally</span>;
   }
 
   if (queuedChanges > 0) {

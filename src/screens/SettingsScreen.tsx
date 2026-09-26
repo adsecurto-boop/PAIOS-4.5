@@ -33,6 +33,7 @@ import { checkOllamaHealth, sendOllamaChat } from '../services/ollamaClient';
 import { getAuthToken } from '../storage';
 import { requestNotificationPermission } from '../utils/notifications';
 import { clearUsageInsights } from '../utils/usageInsights';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 
 interface SettingsScreenProps {
   settings: UserSettings;
@@ -42,6 +43,7 @@ interface SettingsScreenProps {
   onExportData: (mode?: 'share' | 'download') => void;
   onOpenExportModal?: () => void;
   onStartTour?: () => void;
+  userId?: string;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -52,6 +54,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onExportData,
   onOpenExportModal,
   onStartTour,
+  userId,
 }) => {
   const [name, setName] = useState(settings.userName);
   const [apiKey, setApiKey] = useState(settings.customApiKey || '');
@@ -256,6 +259,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       {/* Google SSO & Firestore Realtime Cloud Sync Banner */}
       <CloudSyncBanner />
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-lg" aria-labelledby="sync-health-title">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 id="sync-health-title" className="text-sm font-bold text-white">Sync health</h3><p className="mt-1 text-xs text-slate-400">Sync controls and recovery live here instead of competing with daily actions.</p></div><SyncStatusIndicator userId={userId} /></div>
+      </section>
 
       {/* In-App Software Updates & Release Manager */}
       <SoftwareUpdateCard />

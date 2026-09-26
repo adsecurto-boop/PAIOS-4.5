@@ -41,6 +41,17 @@ export function saveNotificationsHistory(items: PaiosNotification[]): void {
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
+  // Electron notifications are delivered by the trusted main-process bridge and
+  // do not use the browser permission prompt.
+  const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+  if (electronAPI?.notificationsSupported) {
+    try {
+      return Boolean(await electronAPI.notificationsSupported());
+    } catch (error) {
+      console.warn('Electron notification capability check failed:', error);
+    }
+  }
+
   // 1. Try Capacitor Local Notifications permission
   try {
     if (typeof window !== 'undefined' && (window as any).Capacitor) {
@@ -115,13 +126,20 @@ export async function dispatchNotification(
     const electron = (window as any).require ? (window as any).require('electron') : null;
 
     let dispatchedViaElectron = false;
-    if (electronAPI && typeof electronAPI.sendNotification === 'function') {
+    if (electronAPI && typeof electronAPI.showNotification === 'function') {
       try {
-        electronAPI.sendNotification({
+        const result = await electronAPI.showNotification({
           title: `PAIOS: ${title}`,
           body: message,
           message,
         });
+        dispatchedViaElectron = result?.success === true;
+      } catch (e) {
+        console.warn('Electron window.electronAPI notification failed:', e);
+      }
+    } else if (electronAPI && typeof electronAPI.sendNotification === 'function') {
+      try {
+        electronAPI.sendNotification({ title: `PAIOS: ${title}`, body: message, message });
         dispatchedViaElectron = true;
       } catch (e) {
         console.warn('Electron window.electronAPI notification failed:', e);

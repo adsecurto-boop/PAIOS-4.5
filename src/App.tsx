@@ -1267,20 +1267,11 @@ export const App: React.FC = () => {
             <RecoveryBanner onRefreshAppState={reloadState} />
             {/* Top Header Bar */}
             <TopHeaderBar
-              userName={currentUser.displayName || settings.userName || 'PAIOS User'}
-              user={currentUser}
-              onLogOut={handleLogOut}
-              onSyncComplete={reloadState}
               onOpenNotifications={() => setShowNotificationModal(true)}
-              onOpenTour={() => setShowSetupWizardModal(true)}
-              onOpenQuickAdd={() => setShowQuickAddMenu(true)}
               onOpenSearch={() => {
                 handleSearch('');
                 setShowSearchModal(true);
               }}
-              onOpenCheckIn={() => setShowCheckInModal(true)}
-              onOpenReview={() => setShowReviewModal(true)}
-              onOpenSettings={() => setActiveTab(NavTab.SETTINGS)}
               onOpenCommandBar={() => setShowCommandBar(true)}
             />
 
@@ -1449,6 +1440,7 @@ export const App: React.FC = () => {
                   onExportData={handleExportData}
                   onOpenExportModal={() => setShowExportModal(true)}
                   onStartTour={() => setShowSetupWizardModal(true)}
+                  userId={currentUser.uid}
                 />
               )}
             </main>

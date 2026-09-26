@@ -338,6 +338,8 @@ function isSemVerGreaterMain(remote, current) {
 }
 
 // IPC Handlers for Desktop Native OS Notifications
+ipcMain.handle('paios:notifications-supported', () => Boolean(Notification?.isSupported?.()));
+
 ipcMain.on('show-desktop-notification', (event, data) => {
   try {
     const { title, body, message, icon } = data || {};

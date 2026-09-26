@@ -1,6 +1,7 @@
 const { ipcRenderer, contextBridge } = require('electron');
 
 const electronAPI = {
+  notificationsSupported: () => ipcRenderer.invoke('paios:notifications-supported'),
   sendNotification: (data) => {
     try {
       ipcRenderer.send('show-desktop-notification', data);
